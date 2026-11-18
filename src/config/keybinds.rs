@@ -368,6 +368,7 @@ pub struct Keybinds {
     pub next_workspace: ActionKeybinds,
     pub previous_agent: ActionKeybinds,
     pub next_agent: ActionKeybinds,
+    pub next_attention_agent: ActionKeybinds,
     pub focus_agent: Vec<IndexedKeybind>,
     pub new_tab: ActionKeybinds,
     pub rename_tab: ActionKeybinds,
@@ -551,6 +552,7 @@ impl Config {
             next_workspace: empty_action!(),
             previous_agent: empty_action!(),
             next_agent: empty_action!(),
+            next_attention_agent: empty_action!(),
             focus_agent: Vec::new(),
             new_tab: empty_action!(),
             rename_tab: empty_action!(),
@@ -684,6 +686,7 @@ impl Config {
             apply_action!(keybinds.next_workspace, next_workspace, source);
             apply_action!(keybinds.previous_agent, previous_agent, source);
             apply_action!(keybinds.next_agent, next_agent, source);
+            apply_action!(keybinds.next_attention_agent, next_attention_agent, source);
             apply_indexed!(
                 keybinds.focus_agent,
                 focus_agent,
@@ -1204,6 +1207,8 @@ pub fn format_key_combo(binding: KeyCombo) -> String {
         KeyCode::Right => "right".to_string(),
         KeyCode::Up => "up".to_string(),
         KeyCode::Down => "down".to_string(),
+        KeyCode::PageUp => "pageup".to_string(),
+        KeyCode::PageDown => "pagedown".to_string(),
         KeyCode::F(n) => format!("f{n}"),
         _ => format!("{:?}", code).to_lowercase(),
     };
@@ -1323,6 +1328,8 @@ pub(crate) fn parse_key_combo(s: &str) -> Option<KeyCombo> {
         "right" => KeyCode::Right,
         "up" => KeyCode::Up,
         "down" => KeyCode::Down,
+        "pageup" => KeyCode::PageUp,
+        "pagedown" => KeyCode::PageDown,
         "minus" => KeyCode::Char('-'),
         "comma" => KeyCode::Char(','),
         "period" => KeyCode::Char('.'),
@@ -1859,6 +1866,50 @@ close_tab = "X"
     }
 
     #[test]
+    fn attention_bindings_accept_single_array_disabled_and_reject_conflicts() {
+        assert!(Config::default()
+            .keybinds()
+            .next_attention_agent
+            .bindings
+            .is_empty());
+        for (value, count) in [
+            (r#""ctrl+alt+a""#, 1),
+            (r#"["ctrl+alt+a", "prefix+a"]"#, 2),
+            (r#""""#, 0),
+        ] {
+            let config: Config =
+                toml::from_str(&format!("[keys]\nnext_attention_agent = {value}")).unwrap();
+            assert_eq!(config.keybinds().next_attention_agent.bindings.len(), count);
+            let serialized = config.local_keybindings_profile_toml().unwrap();
+            let restored = crate::config::keybindings_from_profile_toml(&serialized).unwrap();
+            assert_eq!(restored.keybinds.next_attention_agent.bindings.len(), count);
+        }
+        let config: Config = toml::from_str(
+            r#"
+            [keys]
+            next_attention_agent = ["ctrl+alt+a", "prefix+a", "bad+key"]
+            next_tab = "ctrl+alt+a"
+        "#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.contains("keys.next_attention_agent") && d.contains("invalid")));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.contains("keys.next_attention_agent") && d.contains("keys.next_tab")));
+        assert_eq!(
+            format_key_combo(parse_key_combo("Alt+PageUp").unwrap()),
+            "alt+pageup"
+        );
+        assert_eq!(
+            format_key_combo(parse_key_combo("CTRL+ALT+PAGEDOWN").unwrap()),
+            "ctrl+alt+pagedown"
+        );
+    }
+
+    #[test]
     fn supported_key_labels_round_trip_through_the_combo_parser() {
         let keys = [
             "a",
@@ -1874,6 +1925,10 @@ close_tab = "X"
             "right",
             "up",
             "down",
+            "pageup",
+            "PageUp",
+            "PAGEDOWN",
+            "pagedown",
             "f1",
             "f12",
             "minus",

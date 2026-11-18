@@ -20,6 +20,10 @@ impl ClientShellState {
                 self.persist_chrome_preferences(outcome);
             }
             crate::input::KeybindMatch::Action(action) => {
+                if action == crate::input::KeybindAction::NextAttentionAgent {
+                    self.focus_next_attention(outcome);
+                    return;
+                }
                 if self.workspace_preview_action_blocked()
                     && matches!(
                         action,
@@ -369,6 +373,9 @@ impl ClientShellState {
             _ => false,
         };
         if changes_focus {
+            if !matches!(kind, PendingEndpointKind::AttentionFocus) {
+                self.attention = Default::default();
+            }
             outcome.repaint |= self.pending_workspace_highlight.take().is_some();
         }
         if !self.endpoint_is_online(&self.active_endpoint_id) {
@@ -568,6 +575,11 @@ impl ClientShellState {
         }
         match pending.kind {
             PendingEndpointKind::Generic => {}
+            PendingEndpointKind::AttentionFocus => {
+                if result.is_err() {
+                    self.attention = Default::default();
+                }
+            }
             PendingEndpointKind::PaneLinkResolve { .. } => unreachable!("handled above"),
             PendingEndpointKind::ProductAnnouncementDismiss { version, id } => {
                 return match result {

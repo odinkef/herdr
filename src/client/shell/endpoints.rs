@@ -148,6 +148,7 @@ impl ClientShellState {
             self.clear_machine_diagnostic(endpoint_id);
         }
         if endpoint_id == &self.active_endpoint_id && status != ClientEndpointStatus::Online {
+            self.attention = Default::default();
             self.pending_workspace_highlight = None;
         }
         if let Some(endpoint) = self
@@ -235,6 +236,7 @@ impl ClientShellState {
         let switching_endpoint = endpoint_id != &self.active_endpoint_id;
         let agent_scroll = self.agent_scroll;
         if switching_endpoint {
+            self.attention = Default::default();
             self.active_endpoint_id = endpoint_id.clone();
             self.pane_surface = None;
             self.pending_pane_surface = None;
