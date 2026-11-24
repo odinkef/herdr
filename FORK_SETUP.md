@@ -6,11 +6,17 @@ Ghostty, and a user-local installation in `~/.local/bin`. Rebuild on the target
 machine rather than assuming an executable from another architecture or libc
 will run there. Read [AGENTS.md](AGENTS.md) before changing repository code.
 
-The upstream base is **Herdr v0.9.5**, commit
-`2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`. The fork remote is
-`https://github.com/odinkef/herdr.git`; upstream is
-`https://github.com/herdrdev/herdr.git`. The differences below are relative to
-that base, not a claim about the latest upstream HEAD.
+This guide covers the **`fork-integrated` feature commit** tested on
+**24 November 2026**. The upstream comparison base is **Herdr v0.9.5**.
+Section 8 uses these two Git revisions.
+
+```bash
+documented=dee05417038a775e6ff0bec741123d97c3826f33
+upstream_base=2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01
+```
+
+The fork remote is `https://github.com/odinkef/herdr.git` and upstream is
+`https://github.com/herdrdev/herdr.git`.
 
 ## 1. Obtain the complete fork source
 
@@ -26,7 +32,12 @@ sha256sum "$HOME/herdr-fork-source.tar.gz"
 ```
 
 Verify the checksum on the target machine and extract the archive into a new
-directory. Build there using the instructions below.
+directory. Build there using the instructions below. To carry Git history for
+future comparisons, clone `fork-integrated` once it is published, or create a
+bundle on the source machine with
+`git -C "$HOME/herdr" bundle create "$HOME/herdr-fork.bundle" fork-integrated`.
+After transferring the bundle, use `git clone -b fork-integrated herdr-fork.bundle herdr`.
+A source archive contains only the files at the exported revision.
 
 ## 2. Differences from upstream v0.9.5
 
@@ -36,11 +47,11 @@ directory. Build there using the instructions below.
 | Client-local attention history | Bindings share one cycle per client. Resolved targets are pruned, new targets join the cycle, and manual navigation or reconnect resets it. Completion visibility remains independent between clients. Sidebar sorting/filtering does not limit the cycle. |
 | Extra tab navigation bindings | `pageup` and `pagedown` are accepted key names, including with modifiers. The workstation maps Alt+PageUp to the next tab and Alt+PageDown to the previous tab. Both wrap without reordering. |
 | Tab reorder shortcuts | `move_tab_previous` and `move_tab_next` move the current tab one position, keep logical focus, wrap at the ends, and do nothing for a single tab. The workstation binds Ctrl+Shift+Left/Right. These actions are unbound by default. |
-| Workspace Todos | Each space has a persistent checklist shared by its tabs. Use `prefix+t` or click below Agents to add, check, or delete tasks. |
+| Workspace Todos | Each space, including a grouped worktree, has its own persistent checklist shared by its tabs. Focus it below Agents with `prefix+t`. A collapsed or cramped sidebar opens the checklist in an overlay. |
 | Native whole-tab transfer | `move_tab_to_workspace`, default `prefix+shift+m`, opens **Move to space…**. The same action is in tab context menus, including inactive tabs. The picker searches spaces on the same server, including collapsed groups, and offers **New space…** seeded with the search text. |
 | Sidebar drop targets | Drag a tab directly onto a visible space or worktree child. The row highlights; hovering does not switch spaces. Source spaces, other servers, machine headers, and blank sidebar areas are invalid. Tab-bar reordering remains available. |
 | Atomic runtime/API support | `tab.transfer` moves the existing complete tab, appends it to its destination, and follows its focused pane by default. It preserves custom labels, exact split tree/ratios, zoom, processes, directories, scrollback, terminal identities, and agent state. |
-| Client and handoff identity support | Relocation metadata preserves completion acknowledgements, recency, notifications, and per-client logical locations across moves and reconnects. Handoff carries retired pane aliases and reserves their workspace prefixes. Frozen generation-1 endpoint codecs and the session-file format are unchanged. |
+| Client and handoff identity support | Relocation metadata preserves completion acknowledgements, recency, notifications, and per-client logical locations across moves and reconnects. Handoff carries retired pane aliases and reserves their workspace prefixes. The fork retains the frozen generation-1 endpoint codecs. |
 
 An empty source space is removed without spawning a replacement shell,
 closing other worktree spaces, or deleting files/checkouts. A new destination
@@ -66,8 +77,28 @@ still means **reorder**; this new CLI command calls **`tab.transfer`**.
 
 The attention and reorder client features work against the original compatible
 v0.9.5 server. Native transfers require a server explicitly advertising
-`tab.transfer`. A new client attached to an old server stays usable and shows
-an unsupported-action notice for transfer.
+`tab.transfer`. Todos appears when the selected server advertises
+`workspace.todos.list`. Task changes use `workspace.todos.add`,
+`workspace.todos.set_done`, and `workspace.todos.delete`. Invoking an
+unavailable action shows a notice and leaves the terminal usable.
+
+### Todo controls
+
+| Action | Keyboard or mouse |
+| --- | --- |
+| Focus Todos | Press the prefix, then `t` (`keys.focus_todos`). Both Ctrl+A and Ctrl+B are prefixes in the workstation profile. |
+| Select a task | Press ↑ or ↓, or click its label. The selected row uses the same full-width background as the active Agent and Space, with a bold label. In the workstation theme the background is `#1e1e2e`. Scroll with the mouse wheel. |
+| Add a task | Press `n` or click **+**, type the label, then press Enter to save or Esc to cancel. |
+| Check or delete | Press Space or click the checkbox to toggle completion. Checked tasks stay in creation order. Delete removes the selected task and selects its successor, or its predecessor at the end. Holding Delete removes one task. |
+| Return to the terminal | From the list, Esc returns typing to the pane you left. Clicking a terminal pane sends subsequent typing there. |
+| Resize with the keyboard | While the list is focused, use the pane resize bindings. On the workstation, Alt+Shift+↑/↓ grows or shrinks the height and Alt+Shift+←/→ narrows or widens it. Prefix then Shift+R enters resize mode. Use arrows or `h/j/k/l`, then Esc or Enter to return to the list. |
+| Resize with the mouse | Drag the divider above Todos for height or the sidebar’s right divider for width. In the overlay, drag an edge or a corner. |
+
+Docked Todos initially uses about a quarter of the sidebar height. Its width
+is shared with Spaces and Agents. The client remembers the docked height and
+the overlay dimensions when reopened. The server saves task labels, completion
+states, and IDs with the workspace. Older session files open with empty lists.
+Moving a tab to another space shows the destination’s list.
 
 ## 3. Build requirements and verification
 
@@ -173,6 +204,14 @@ config; do not unset `HERDR_ENV` to bypass nesting protection.
 Verify both configured prefixes, attention cycling, reload/help, next/previous
 tab, reorder/wrap, picker cancellation, inactive-tab context menus, direct
 sidebar/worktree drops, new destinations, multi-pane/zoom state, and live output.
+For Todos, use two spaces and a split terminal. Add two tasks, mark one
+complete, and move the highlight across both with ↑ and ↓. Check that only
+one row has the active Space background. Switch tabs in the same space, then
+switch spaces to verify which list appears. Resize the docked list and the
+overlay with both the keyboard and mouse. Press Esc and type into the original
+split. Reopen the client to check saved sizes, then restart the disposable
+session to check task order and completion.
+
 Keep the personal session untouched during these checks. The candidate's local
 `.local/` harnesses can provide additional evidence when separately copied;
 that directory is excluded from the portable source archive above.
@@ -222,6 +261,7 @@ next_tab = ["prefix+n", "alt+pageup"]
 move_tab_previous = "ctrl+shift+left"
 move_tab_next = "ctrl+shift+right"
 move_tab_to_workspace = "prefix+shift+m"
+focus_todos = "prefix+t"
 
 split_vertical = ["prefix+|", "prefix+v"]
 split_horizontal = "prefix+minus"
@@ -260,18 +300,21 @@ Ctrl+A then lowercase a, and Ctrl+B then lowercase a share the attention cycle.
 
 ### Server activation and rollback
 
-Replacing a binary or restarting a client does **not** upgrade an already
-running server. Native transfer works only after that server runs the candidate.
-For a fresh installation, launching the installed `herdr` starts it normally.
-For an existing session, save work and arrange a deliberate server upgrade.
+For a fresh installation, launching the installed `herdr` starts the server.
+For an existing session, check the methods the selected server advertises.
+When it already supports transfer and Todos, installing the new executable and
+reopening the client activates Todo resizing and the active-row highlight.
+On the workstation the client is the Ghostty dropdown described in section 6.
+If a required server method is missing, save the target session’s state and
+arrange a server upgrade.
 `herdr server stop` ends that server's pane processes; persisted layout restore
 is not live-process preservation. Do not stop the personal session as a smoke
 test. Experimental live handoff is opt-in and should be separately tested with
 the actual old/new binary pair before relying on it for important live work.
 
-After an authorized server upgrade, verify an actual transfer on a disposable
-tab. A client reporting that `tab.transfer` is unsupported still has an old
-selected server. For SSH connections, update the server on that machine too.
+After an authorized server upgrade, verify transfer on a disposable tab and
+add, check, and delete a task in a disposable space. For SSH connections,
+check the methods on the remote server as well.
 
 Before a downgrade, back up the target session’s current `session.json`, `session-snapshots/`, and `session-history.json` if present. Older builds can discard saved Todos when they next write session state.
 
@@ -328,6 +371,20 @@ ordinary typing, both prefixes, and all tab shortcuts after changes.
 
 ## 7. Verification evidence and limits
 
+On **24 November 2026**, the documented feature revision passed Linux CI with
+**4,090 Rust tests passed and 15 skipped**. The documentation contract checks
+and release build passed. The installed workstation executable had SHA-256
+`625ddeaac186ae1f0b70e4dba40d77dc39dba19bd67ca9d5de64bb2102c58af9`.
+A disposable terminal test compared the rendered workspace and Todo colors in
+the Catppuccin theme. One dark row followed ↑ and ↓ through checked tasks and
+scrolling in both layouts. Reopening the Ghostty dropdown preserved focus and
+all 21 live pane processes. The Windows lint stage of `just check` requires an
+SDK/CRT that was absent on this host.
+
+Earlier disposable-session checks exercised both prefixes, keyboard and mouse
+resizing, size persistence, per-worktree task isolation, task persistence after
+server restart, and return to the original split.
+
 The 18 November native tab-transfer build passed native Linux `just ci`: **4,073 Rust tests**, with
 15 existing manual/profile tests skipped; 150 Python maintenance tests;
 formatting, Clippy, UI architecture, workflow, and integration-asset checks.
@@ -338,8 +395,8 @@ and handoff followed by workspace allocation above a retired alias prefix.
 Three older-server compatibility checks passed. Relocation fanout at 1 and
 15 populated panes showed no growth from 4,096 cached aliases in steady state.
 
-The latest interactive Ghostty smoke was **not fully validated** on the test
-display: GTK rendered a blank window with `eglExportDMABUFImage` failures,
+The 18 November interactive Ghostty transfer smoke was **not fully validated**
+on the test display. GTK rendered a blank window with `eglExportDMABUFImage` failures,
 and injected keys/clicks did not reach the input log. Runtime transfer checks
 with Ghostty attached passed through the initial transfer; PTY input and
 deterministic native UI tests passed. Earlier attention/reorder-only Ghostty
@@ -351,15 +408,38 @@ filesystem. The feature's rendering/fanout profiles passed separately. Windows
 cross-compilation was not part of this native Linux validation. Recheck the
 target machine and report these distinctions honestly.
 
-On the source candidate, `.local/verification.json` and the `.local/*.log`
-files contain the detailed evidence. These ignored files and `/tmp` smoke
-artifacts are machine-local and do not arrive in a clone or the source archive
-unless copied separately. More behavior and API details are in
+The original `native-tab-transfer` worktree holds its November 18 evidence in
+`.local/verification.json` and `.local/*.log`. The combined branch’s test logs
+are in the source checkout’s `.local/todos-validation/` directory. These ignored
+files are local to the workstation. More behavior and API details are in
 [the local shortcut guide](docs/next/attention-navigation.md),
 [keyboard docs](docs/next/website/src/content/docs/keyboard.mdx), and
 [socket API docs](docs/next/website/src/content/docs/socket-api.mdx).
 
-For future agents: preserve existing user changes, distinguish client reload
-from server replacement, keep smoke tests isolated, and record the source,
-toolchain, executable hash, actual server capabilities, checks, and any remaining
-limits when handing the installation back to the user.
+## 8. Updating this guide from commit diffs
+
+In a checkout with Git history, run the `documented` and `upstream_base`
+assignments at the top of this guide. From the repository root, use the same
+shell to compare that feature commit with the branch being prepared.
+
+```bash
+candidate=$(git rev-parse --verify 'fork-integrated^{commit}')
+git cat-file -e "${documented:?missing documented commit}^{commit}"
+git status --short --branch
+git log --oneline "$documented..$candidate"
+git diff --name-status "$documented" "$candidate"
+git diff --find-renames "$documented" "$candidate" -- . ':(exclude)FORK_SETUP.md'
+git diff --stat "$upstream_base" "$candidate"
+```
+
+The two explicit endpoints compare the source trees even after an amend or
+rebase. If the older object is missing, obtain it from the source checkout or a
+bundle containing that revision. The last command shows the cumulative fork
+diff against the pinned upstream base.
+
+Read the changed implementation, configuration, tests, and user docs. Update
+the feature inventory, shortcuts, installation or migration steps, and smoke
+checks affected by the diff. Record verification for the revision actually
+tested. Replace the feature hash and date at the top with the commit you have
+just documented. A subsequent commit that only edits this guide can follow
+that feature commit without moving the baseline.
