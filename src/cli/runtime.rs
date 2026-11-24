@@ -121,3 +121,7 @@ pub(super) fn pane_move(params: PaneMoveParams) -> std::io::Result<i32> {
 pub(super) fn pane_close(pane_id: String) -> std::io::Result<i32> {
     print_method_response("cli:pane:close", Method::PaneClose(PaneTarget { pane_id }))
 }
+
+pub(super) fn tab_transfer(params: crate::api::schema::TabTransferParams) -> std::io::Result<i32> {
+    print_method_response("cli:tab:move", Method::TabTransfer(params))
+}

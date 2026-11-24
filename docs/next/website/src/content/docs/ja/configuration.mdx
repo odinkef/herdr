@@ -185,6 +185,10 @@ switch_workspace = "prefix+shift+1..9"
 focus_agent = "prefix+alt+1..9"
 ```
 
+`keys.focus_todos` の既定値は `"prefix+t"` です。直接押すキーの組み合わせや複数の割り当ても設定できます。設定したどのプレフィックスからでも現在のワークスペースの一覧を開けます。
+
+一覧にフォーカスがある間は、`keys.resize_pane_up`、`keys.resize_pane_down`、`keys.resize_pane_left`、`keys.resize_pane_right`、`keys.resize_mode` が Todos のサイズ変更に使われます。
+
 レガシーな `[keys.indexed]` テーブルは互換性のために引き続きパースされますが、新しい設定では明示的なアクションフィールドを使ってください。
 
 ## カスタムコマンドキーバインド

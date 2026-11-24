@@ -48,7 +48,26 @@ Tabs:
 | Next / previous tab | `prefix+n` / `prefix+p` |
 | Jump to tab 1–9 | `prefix+1..9` |
 | Rename tab | `prefix+shift+t` |
+| Move tab to another space | `prefix+shift+m` |
 | Close tab | `prefix+shift+x` |
+
+Use **Move to space…** in a tab's right-click menu, or press
+`prefix+shift+m`, to open the space picker. Type to filter spaces on the same
+server, including spaces in collapsed groups. Choose **New space…** to name an
+ordinary space, starting with the search text. Escape cancels without changing
+focus. The menu acts on the tab you right-clicked, including an inactive tab.
+
+You can also drag a tab directly onto a visible sidebar space, including a
+worktree child. The destination row highlights until you release the mouse;
+hovering keeps your current space selected. The source space, machine headers,
+blank areas, and other servers are invalid destinations. Dragging within the
+tab bar retains its reorder behavior.
+
+Moving follows the whole live tab and its focused pane. Split ratios, zoom,
+custom labels, processes, scrollback, and agent state travel with it. An empty
+source space disappears without closing related worktree spaces or deleting
+checkouts. These controls require a server advertising `tab.transfer`; older
+servers show an unsupported-action notice and remain usable.
 
 Workspaces and session:
 
@@ -59,6 +78,11 @@ Workspaces and session:
 | Close workspace | `prefix+shift+d` |
 | Goto picker | `prefix+g` |
 | Toggle sidebar | `prefix+b` |
+| Focus workspace Todos | `prefix+t` |
+
+Each space has its own Todos list below Agents, shared by its tabs. With the sidebar collapsed or too small, the shortcut opens a temporary checklist. Use ↑ and ↓ to select a task, Space to check or uncheck it, and Delete to remove it. Checked tasks keep their position. Press `n`, type a label, and press Enter to add it. Esc cancels the editor. From the list, Esc returns typing to the pane you left. You can also click **+**, click a label to select it, click a checkbox to toggle it, scroll with the wheel, or click a terminal pane to type there.
+
+While Todos has focus, the pane resize shortcuts move its borders. Up grows the list and Down shrinks it. Left and Right change the sidebar width. You can also enter resize mode, use the arrows or `h/j/k/l`, and press Esc to return to the list. With the mouse, drag the line above Todos for height or the sidebar’s right divider for width. In the compact overlay, drag a border or corner.
 
 The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
 

@@ -24,6 +24,7 @@ mod runtime;
 mod session;
 pub mod state;
 mod tab_bar_status;
+mod tab_transfer;
 mod terminal_targets;
 mod terminal_titles;
 mod theme_sync;
@@ -496,6 +497,8 @@ impl App {
             direct_attach_resize_locks: std::collections::HashSet::new(),
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
+            pane_relocation_aliases: std::collections::BTreeMap::new(),
+            pane_relocation_revision: 0,
             workspaces,
             active,
             previous_pane_focus: None,

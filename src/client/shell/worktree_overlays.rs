@@ -111,6 +111,15 @@ pub(super) fn render_worktree_open_overlay(
     open: &ClientWorktreeOpenOverlay,
     p: &Palette,
 ) -> Option<OverlayRender> {
+    render_filtered_list_overlay(b, open, p, false)
+}
+
+pub(super) fn render_filtered_list_overlay(
+    b: &mut Buffer,
+    open: &ClientWorktreeOpenOverlay,
+    p: &Palette,
+    transfer: bool,
+) -> Option<OverlayRender> {
     let popup_height = (open.entries.len().saturating_mul(2) + 7).clamp(12, 26) as u16;
     let popup = popup(b.area, 96, popup_height)?;
     let inner = panel(b, popup, p.accent, p.panel_bg)?;
@@ -119,7 +128,11 @@ pub(super) fn render_worktree_open_overlay(
         inner.x,
         inner.y,
         inner.width,
-        "open worktree",
+        if transfer {
+            "move tab to space"
+        } else {
+            "open worktree"
+        },
         Style::default()
             .fg(p.text)
             .bg(p.panel_bg)
@@ -137,7 +150,12 @@ pub(super) fn render_worktree_open_overlay(
         } else if !open.query.is_empty() {
             format!(" / {}", open.query)
         } else {
-            " / filter worktrees".to_owned()
+            if transfer {
+                " / filter spaces"
+            } else {
+                " / filter worktrees"
+            }
+            .to_owned()
         },
         Style::default()
             .fg(if open.search_focused {
@@ -147,10 +165,11 @@ pub(super) fn render_worktree_open_overlay(
             })
             .bg(p.panel_bg),
     );
+    let unit = if transfer { "spaces" } else { "checkouts" };
     let count = if filtered.len() == open.entries.len() {
-        format!("{} checkouts", open.entries.len())
+        format!("{} {unit}", open.entries.len())
     } else {
-        format!("{}/{} checkouts", filtered.len(), open.entries.len())
+        format!("{}/{} {unit}", filtered.len(), open.entries.len())
     };
     let cursor = if open.search_focused {
         text_editor::render(
@@ -245,7 +264,11 @@ pub(super) fn render_worktree_open_overlay(
             body.x,
             body.y,
             body.width,
-            " no matching worktrees",
+            if transfer {
+                " no matching spaces"
+            } else {
+                " no matching worktrees"
+            },
             Style::default().fg(p.overlay0).bg(p.panel_bg),
         );
     }
@@ -255,7 +278,11 @@ pub(super) fn render_worktree_open_overlay(
             inner.x,
             inner.bottom() - 3,
             inner.width,
-            " opening…",
+            if transfer {
+                " moving…"
+            } else {
+                " opening…"
+            },
             Style::default().fg(p.accent).bg(p.panel_bg),
         );
     } else if let Some(error) = open.error.as_deref() {
@@ -275,7 +302,7 @@ pub(super) fn render_worktree_open_overlay(
     button(
         b,
         *primary,
-        " ↵ open ",
+        if transfer { " ↵ move " } else { " ↵ open " },
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)

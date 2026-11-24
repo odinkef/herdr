@@ -186,6 +186,10 @@ fn run_handoff_import_server(socket_path: &Path, token: &str) -> io::Result<()> 
             Some(api_server),
             server_stop,
         )?;
+        server
+            .app
+            .state
+            .restore_public_pane_aliases(&received.manifest.public_pane_aliases);
         // Carried across before any client attaches, so the first title sent is
         // the override rather than the configured one it replaced.
         server.api_window_title = received.manifest.api_window_title.take();

@@ -234,6 +234,7 @@ impl HeadlessServer {
                 | Method::PaneSplit(_)
                 | Method::TabClose(_)
                 | Method::TabCreate(_)
+                | Method::TabTransfer(_)
                 | Method::WorkspaceClose(_)
                 | Method::WorkspaceCreate(_)
                 | Method::WorktreeCreate(_)
@@ -268,6 +269,7 @@ impl HeadlessServer {
                 | Method::PaneZoom(_)
                 | Method::TabClose(_)
                 | Method::TabCreate(_)
+                | Method::TabTransfer(_)
                 | Method::TabFocus(_)
                 | Method::TabMove(_)
                 | Method::TabRename(_)
@@ -301,6 +303,7 @@ impl HeadlessServer {
                 | Method::PaneZoom(_)
                 | Method::TabClose(_)
                 | Method::TabCreate(_)
+                | Method::TabTransfer(_)
                 | Method::TabFocus(_)
                 | Method::WorkspaceClose(_)
                 | Method::WorkspaceCreate(_)
@@ -854,15 +857,20 @@ impl HeadlessServer {
             api::schema::Method::TabCreate(params) => params.focus,
             _ => false,
         };
+        let inspect_tab_transfer_focus =
+            matches!(&msg.request.method, api::schema::Method::TabTransfer(params) if params.focus);
         let inspect_pane_move = matches!(
             &msg.request.method,
             api::schema::Method::PaneMove(params) if params.focus
         );
-        let response_proxy = (agent_focus_target.is_some() || inspect_pane_move).then(|| {
-            let (proxy_tx, proxy_rx) = std::sync::mpsc::channel();
-            let original = std::mem::replace(&mut msg.respond_to, proxy_tx);
-            (original, proxy_rx)
-        });
+        let response_proxy = (agent_focus_target.is_some()
+            || inspect_pane_move
+            || inspect_tab_transfer_focus)
+            .then(|| {
+                let (proxy_tx, proxy_rx) = std::sync::mpsc::channel();
+                let original = std::mem::replace(&mut msg.respond_to, proxy_tx);
+                (original, proxy_rx)
+            });
         let reconcile = Self::shell_locations_may_need_reconcile(&msg.request.method);
         let changed = self.handle_api_request_with_shutdown_check_inner(msg, false, false);
         let proxied_result = forward_proxied_api_response(response_proxy);
@@ -892,6 +900,18 @@ impl HeadlessServer {
         let public_focus_succeeded = explicit_focus_succeeded
             || (create_focus_requested && target_changed)
             || pane_move_focus_succeeded;
+        let tab_transfer_focus_succeeded = inspect_tab_transfer_focus
+            && matches!(
+                &proxied_result,
+                Some(api::schema::ResponseResult::TabTransferred { changed: true, .. })
+            );
+        if tab_transfer_focus_succeeded {
+            // A CLI focus request affects the foreground client; independent observers
+            // retain their tabs unless those tabs themselves moved.
+            if let Some(client_id) = self.foreground_client_id {
+                self.focus_shell_client_on_default_target(client_id);
+            }
+        }
         if public_focus_succeeded {
             self.focus_all_shell_clients_on_default_target();
         }
@@ -912,6 +932,7 @@ impl HeadlessServer {
         client_id: u64,
         msg: api::ApiRequestMessage,
     ) -> bool {
+        let transfer_without_focus = matches!(&msg.request.method, api::schema::Method::TabTransfer(params) if !params.focus);
         let focus_before = self.shell_focus_target(client_id);
         let focused_tabs_before = self.focused_shell_tabs();
         let method_claims_geometry = Self::shell_endpoint_claims_geometry(&msg.request.method);
@@ -923,7 +944,9 @@ impl HeadlessServer {
         let popup_before = self.app.state.popup_pane.is_some();
         let popup_owner = self.shell_tab_id_for_client(client_id);
         let changed = self.handle_api_request_with_shutdown_check_inner(msg, false, true);
-        self.focus_shell_client_on_default_target(client_id);
+        if !transfer_without_focus {
+            self.focus_shell_client_on_default_target(client_id);
+        }
         if !popup_before && self.app.state.popup_pane.is_some() {
             self.popup_owner_tab_id = popup_owner;
         }

@@ -14,63 +14,19 @@ that base, not a claim about the latest upstream HEAD.
 
 ## 1. Obtain the complete fork source
 
-**Source status on 18 November 2026:** the fork changes are local working-tree
-changes, including untracked Rust files. They have not been committed or
-pushed as part of this work. A fresh Git clone, `git archive HEAD`, or checking
-out the branch name alone will omit these changes.
+The local `fork-integrated` branch in `/home/odin/herdr` contains the attention
+navigation shortcuts, tab reordering, native tab transfer, and workspace Todos.
+Build that branch to install those features together.
 
-On the original workstation, there are two checkouts:
-
-| Location | Contents |
-| --- | --- |
-| `/home/odin/herdr` | Original checkout, branch `attention-navigation`: attention navigation and tab reorder changes. |
-| `/home/odin/herdr-worktrees/native-tab-transfer` | Full candidate, branch `native-tab-transfer`: original changes plus native tab transfer, tests, and docs. Use this source for all features below. |
-
-The full candidate was built and tested but **was not installed**. The existing
-installation and running personal session were left unchanged. This guide is
-present in both checkout roots so it can travel with either source tree.
-
-To transport the complete candidate, run this on the source machine. It copies
-the actual files, including untracked source, while excluding Git worktree
-pointers, build outputs, and local verification caches:
+To copy its committed source to another machine, run:
 
 ```bash
-HERDR_FORK_SOURCE="$HOME/herdr-worktrees/native-tab-transfer"
-test -f "$HERDR_FORK_SOURCE/src/client/shell/attention.rs"
-test -f "$HERDR_FORK_SOURCE/src/app/tab_transfer.rs"
-test -f "$HERDR_FORK_SOURCE/FORK_SETUP.md"
-
-tar -C "$HERDR_FORK_SOURCE" \
-  --exclude='.git' --exclude='./target' --exclude='./.local' \
-  --exclude='node_modules' --exclude='.zig-cache' --exclude='zig-out' \
-  --exclude='./vendor/libghostty-vt/zig-pkg' \
-  -czf "$HOME/herdr-fork-source.tar.gz" .
+git -C "$HOME/herdr" archive --format=tar.gz --output="$HOME/herdr-fork-source.tar.gz" fork-integrated
 sha256sum "$HOME/herdr-fork-source.tar.gz"
 ```
 
-Transfer that archive and its checksum to the target machine. Keep `vendor/`,
-`crates/`, `Cargo.lock`, and the hidden `.cargo/` directory. Do not copy just
-`src/`. The archive deliberately has no Git history; a Git checkout containing
-the committed fork changes is preferable once such a revision is published.
-Never copy a worktree's `.git` pointer to a different machine.
-
-On the target, verify the supplied checksum, extract into a new directory,
-and inspect the feature sources before building:
-
-```bash
-mkdir -p "$HOME/src/herdr-fork"
-tar -xzf "$HOME/Downloads/herdr-fork-source.tar.gz" -C "$HOME/src/herdr-fork"
-cd "$HOME/src/herdr-fork"
-test -f src/client/shell/attention.rs
-test -f src/app/tab_transfer.rs
-rg -n 'tab\.transfer' src/api/schema.rs
-```
-
-If the transfer module is absent, this is the attention-only source. Obtain
-the full candidate instead of assuming tab transfer is available. On the
-source workstation, a feature-only patch relative to the original local fork
-also exists at the candidate's `.local/native-tab-transfer.patch`; that patch
-alone does not contain the earlier attention-navigation changes.
+Verify the checksum on the target machine and extract the archive into a new
+directory. Build there using the instructions below.
 
 ## 2. Differences from upstream v0.9.5
 
@@ -80,6 +36,7 @@ alone does not contain the earlier attention-navigation changes.
 | Client-local attention history | Bindings share one cycle per client. Resolved targets are pruned, new targets join the cycle, and manual navigation or reconnect resets it. Completion visibility remains independent between clients. Sidebar sorting/filtering does not limit the cycle. |
 | Extra tab navigation bindings | `pageup` and `pagedown` are accepted key names, including with modifiers. The workstation maps Alt+PageUp to the next tab and Alt+PageDown to the previous tab. Both wrap without reordering. |
 | Tab reorder shortcuts | `move_tab_previous` and `move_tab_next` move the current tab one position, keep logical focus, wrap at the ends, and do nothing for a single tab. The workstation binds Ctrl+Shift+Left/Right. These actions are unbound by default. |
+| Workspace Todos | Each space has a persistent checklist shared by its tabs. Use `prefix+t` or click below Agents to add, check, or delete tasks. |
 | Native whole-tab transfer | `move_tab_to_workspace`, default `prefix+shift+m`, opens **Move to space…**. The same action is in tab context menus, including inactive tabs. The picker searches spaces on the same server, including collapsed groups, and offers **New space…** seeded with the search text. |
 | Sidebar drop targets | Drag a tab directly onto a visible space or worktree child. The row highlights; hovering does not switch spaces. Source spaces, other servers, machine headers, and blank sidebar areas are invalid. Tab-bar reordering remains available. |
 | Atomic runtime/API support | `tab.transfer` moves the existing complete tab, appends it to its destination, and follows its focused pane by default. It preserves custom labels, exact split tree/ratios, zoom, processes, directories, scrollback, terminal identities, and agent state. |
@@ -316,6 +273,8 @@ After an authorized server upgrade, verify an actual transfer on a disposable
 tab. A client reporting that `tab.transfer` is unsupported still has an old
 selected server. For SSH connections, update the server on that machine too.
 
+Before a downgrade, back up the target session’s current `session.json`, `session-snapshots/`, and `session-history.json` if present. Older builds can discard saved Todos when they next write session state.
+
 To roll back, atomically stage the saved executable back into the selected
 installation path, restore only the config changes from this installation,
 and reopen/restart the affected client. A server already running the candidate
@@ -369,7 +328,7 @@ ordinary typing, both prefixes, and all tab shortcuts after changes.
 
 ## 7. Verification evidence and limits
 
-The full candidate passed native Linux `just ci`: **4,073 Rust tests**, with
+The 18 November native tab-transfer build passed native Linux `just ci`: **4,073 Rust tests**, with
 15 existing manual/profile tests skipped; 150 Python maintenance tests;
 formatting, Clippy, UI architecture, workflow, and integration-asset checks.
 Documentation/configuration/schema checks and `just build` passed. Thirteen

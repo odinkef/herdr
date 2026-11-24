@@ -299,6 +299,27 @@ fn tab_command() -> Command {
                 .arg(required("tab_id", "TAB_ID"))
                 .arg(required("label", "LABEL").num_args(1..)),
         )
+        .subcommand(
+            Command::new("move")
+                .about("Move a live tab to another space, preserving all running terminals")
+                .arg(Arg::new("tab_id").value_name("TAB_ID"))
+                .arg(flag("current"))
+                .group(
+                    ArgGroup::new("source")
+                        .args(["tab_id", "current"])
+                        .required(true),
+                )
+                .arg(option("workspace", "WORKSPACE_ID"))
+                .arg(flag("new-workspace"))
+                .group(
+                    ArgGroup::new("destination")
+                        .args(["workspace", "new-workspace"])
+                        .required(true),
+                )
+                .arg(option("label", "NAME").requires("new-workspace"))
+                .arg(flag("focus").conflicts_with("no-focus"))
+                .arg(flag("no-focus")),
+        )
         .subcommand(id_command("close", "tab_id", "Close a tab"))
 }
 

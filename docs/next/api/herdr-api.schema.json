@@ -4357,6 +4357,64 @@
           ],
           "type": "object"
         },
+        "TabTransferDestination": {
+          "oneOf": [
+            {
+              "properties": {
+                "type": {
+                  "const": "workspace",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "workspace_id"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "const": "new_workspace",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "TabTransferParams": {
+          "description": "Transfer a complete live tab; `tab.move` continues to mean tab-bar reordering.",
+          "properties": {
+            "destination": {
+              "$ref": "#/schemas/request/$defs/TabTransferDestination"
+            },
+            "focus": {
+              "default": true,
+              "type": "boolean"
+            },
+            "tab_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tab_id",
+            "destination"
+          ],
+          "type": "object"
+        },
         "ToastHerdrPosition": {
           "enum": [
             "top-left",
@@ -4520,6 +4578,59 @@
           },
           "required": [
             "workspace_id"
+          ],
+          "type": "object"
+        },
+        "WorkspaceTodoAddParams": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "WorkspaceTodoSetDoneParams": {
+          "properties": {
+            "done": {
+              "type": "boolean"
+            },
+            "todo_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "todo_id",
+            "done"
+          ],
+          "type": "object"
+        },
+        "WorkspaceTodoTarget": {
+          "properties": {
+            "todo_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "todo_id"
           ],
           "type": "object"
         },
@@ -5004,6 +5115,70 @@
         {
           "properties": {
             "method": {
+              "const": "workspace.todos.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.todos.add",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceTodoAddParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.todos.set_done",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceTodoSetDoneParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.todos.delete",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceTodoTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "workspace.move",
               "type": "string"
             },
@@ -5217,6 +5392,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/TabMoveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.transfer",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/TabTransferParams"
             }
           },
           "required": [
@@ -9277,6 +9468,35 @@
             },
             {
               "properties": {
+                "revision": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "todos": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/WorkspaceTodo"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "workspace_todos",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "workspace_id",
+                "revision",
+                "todos"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
                 "source": {
                   "$ref": "#/schemas/success_response/$defs/WorktreeSourceInfo"
                 },
@@ -9415,6 +9635,65 @@
                 "type",
                 "tab",
                 "root_pane"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "created_workspace": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/schemas/success_response/$defs/WorkspaceInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "layout": {
+                  "$ref": "#/schemas/success_response/$defs/PaneLayoutSnapshot"
+                },
+                "pane_id_map": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "previous_tab_id": {
+                  "type": "string"
+                },
+                "previous_workspace_id": {
+                  "type": "string"
+                },
+                "removed_workspace": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/schemas/success_response/$defs/WorkspaceInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tab": {
+                  "$ref": "#/schemas/success_response/$defs/TabInfo"
+                },
+                "type": {
+                  "const": "tab_transferred",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "changed",
+                "previous_workspace_id",
+                "previous_tab_id",
+                "tab",
+                "layout",
+                "pane_id_map"
               ],
               "type": "object"
             },
@@ -10635,6 +10914,27 @@
             "tab_count",
             "active_tab_id",
             "agent_status"
+          ],
+          "type": "object"
+        },
+        "WorkspaceTodo": {
+          "properties": {
+            "done": {
+              "type": "boolean"
+            },
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "done"
           ],
           "type": "object"
         },

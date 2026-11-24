@@ -43,12 +43,17 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "tab.focus",
     "tab.move",
     "tab.rename",
+    "tab.transfer",
     "workspace.close",
     "workspace.create",
     "workspace.focus",
     "workspace.move",
     "workspace.move_block",
     "workspace.rename",
+    "workspace.todos.add",
+    "workspace.todos.delete",
+    "workspace.todos.list",
+    "workspace.todos.set_done",
     "worktree.create",
     "worktree.list",
     "worktree.open",
@@ -296,6 +301,27 @@ mod tests {
         assert_eq!(
             actual.remove("pane.link.resolve").as_deref(),
             Some("f5e4a3e01453ae7b188f127ce951c12c20e0bebcc17cc364eeb6d1a01fd5bf81")
+        );
+        assert_eq!(
+            actual.remove("tab.transfer").as_deref(),
+            Some("a5fae8b210a78bd627a6d136c9365384d7b0c90b9bafc8882c6d5ea08d980dc4")
+        );
+
+        assert_eq!(
+            actual.remove("workspace.todos.add").as_deref(),
+            Some("16780faf45b232ea468fadd45e2535ebaf6b45f7a08ea07f6cbb6024131e0f18")
+        );
+        assert_eq!(
+            actual.remove("workspace.todos.delete").as_deref(),
+            Some("3a63934f7429f396ce81406779a757565e416160d54d00d22ee16f65b5ea01fb")
+        );
+        assert_eq!(
+            actual.remove("workspace.todos.list").as_deref(),
+            Some("6e2d3a61c4bc53b91012ed9f287041c55928cacb02ed0a70668a6d1e97b4e337")
+        );
+        assert_eq!(
+            actual.remove("workspace.todos.set_done").as_deref(),
+            Some("b90b9e5f0a56662c89ce1ffa9b99a84c6aff5065a52fa14ba5ff02757519eddf")
         );
 
         assert_eq!(

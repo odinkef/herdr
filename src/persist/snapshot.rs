@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::Node;
 use crate::terminal::TerminalRuntimeRegistry;
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspaceTodoList};
 
 /// Current snapshot format version.
 pub(super) const SNAPSHOT_VERSION: u32 = 3;
@@ -55,6 +55,8 @@ pub struct WorkspaceSnapshot {
     #[serde(default)]
     pub custom_name: Option<String>,
     pub identity_cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "WorkspaceTodoList::is_pristine")]
+    pub(crate) todos: WorkspaceTodoList,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_space: Option<crate::workspace::WorktreeSpaceMembership>,
     #[serde(default)]
@@ -168,6 +170,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
             id: None,
             custom_name: snap.custom_name,
             identity_cwd,
+            todos: Default::default(),
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
             next_public_pane_number: 0,
@@ -306,6 +309,7 @@ fn capture_workspace(
         id: Some(ws.id.clone()),
         custom_name: ws.custom_name.clone(),
         identity_cwd,
+        todos: ws.todos.clone(),
         worktree_space: ws.worktree_space.clone(),
         public_pane_numbers: ws
             .public_pane_numbers
@@ -405,6 +409,10 @@ pub(super) fn layout_fingerprint(snapshot: &SessionSnapshot) -> Option<String> {
     use sha2::{Digest, Sha256};
 
     let mut value = serde_json::to_value(snapshot).ok()?;
+    // The sidecar indexes pane history by layout. Editing a task leaves those indices valid.
+    for workspace in value["workspaces"].as_array_mut()? {
+        workspace.as_object_mut()?.remove("todos");
+    }
     // Sets serialize as arrays; normalize their order as well as JSON object keys.
     let mut collapsed: Vec<_> = snapshot.collapsed_space_keys.iter().collect();
     collapsed.sort_unstable();
@@ -632,6 +640,40 @@ mod tests {
     }
 
     #[test]
+    fn workspace_todos_persist_without_invalidating_pane_history() {
+        let mut state = AppState::test_with_adversarial_identity_state();
+        let old = capture_from_state(&state);
+        let fingerprint = layout_fingerprint(&old).unwrap();
+        let legacy_json = serde_json::to_value(old).unwrap();
+        assert!(legacy_json["workspaces"][0].get("todos").is_none());
+        let migrated = parse_snapshot(&legacy_json.to_string()).unwrap();
+        assert!(migrated.workspaces[0].todos.is_pristine());
+
+        let todos = &mut state.workspaces[0].todos;
+        todos.add("keep").unwrap();
+        todos.add("delete").unwrap();
+        todos.set_done(1, true).unwrap();
+        todos.delete(2).unwrap();
+        let saved = capture_from_state(&state);
+        let mut restored = parse_snapshot(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert_eq!(layout_fingerprint(&restored).unwrap(), fingerprint);
+        let todos = &mut restored.workspaces[0].todos;
+        assert_eq!(todos.items.len(), 1);
+        assert_eq!(todos.items[0].label, "keep");
+        assert!(todos.items[0].done);
+        assert_eq!(todos.revision, 4);
+        todos.add("new").unwrap();
+        assert_eq!(todos.items[1].id, 3);
+        todos.delete(1).unwrap();
+        todos.delete(3).unwrap();
+        let mut empty = parse_snapshot(&serde_json::to_string(&restored).unwrap()).unwrap();
+        let todos = &mut empty.workspaces[0].todos;
+        assert!(todos.items.is_empty());
+        todos.add("after empty restart").unwrap();
+        assert_eq!(todos.items[0].id, 4);
+    }
+
+    #[test]
     fn layout_fingerprint_survives_json_round_trip() {
         let mut snapshot = parse_snapshot(include_str!(
             "../../tests/fixtures/session/current-herdr-session.json"
@@ -727,6 +769,7 @@ mod tests {
                 id: Some("wproj".to_string()),
                 custom_name: Some("pi-mono".to_string()),
                 identity_cwd: PathBuf::from("/home/can/Projects/herdr"),
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(0, 1), (1, 2)]),
                 next_public_pane_number: 3,
@@ -1428,6 +1471,7 @@ mod tests {
                 id: Some("test-ws".to_string()),
                 custom_name: Some("fallback test".to_string()),
                 identity_cwd: PathBuf::from("/tmp"),
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
                 next_public_pane_number: 0,

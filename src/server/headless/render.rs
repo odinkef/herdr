@@ -645,14 +645,40 @@ impl HeadlessServer {
                     self.server_config_diagnostic_without_keybindings.clone()
                 };
                 candidate.revision = client.shell_projection_revision;
+                let relocation_changed = client.shell_pane_relocation_revision
+                    != Some(self.app.state.pane_relocation_revision);
                 if client.shell_snapshot.as_ref() != Some(&candidate)
                     || client.shell_agent_completions.as_ref() != Some(&completions)
                     || client.shell_agent_view != agent_view
+                    || relocation_changed
                 {
                     client.shell_projection_revision =
                         client.shell_projection_revision.saturating_add(1);
                     candidate.revision = client.shell_projection_revision;
                     completions.revision = candidate.revision;
+                    // The cached normalized map is inspected once per client/frame by
+                    // revision only. Clone/encode aliases only when that revision changes.
+                    let relocation_framed = if relocation_changed {
+                        let relocation = crate::protocol::endpoint::EndpointPaneRelocations {
+                            boot_id: candidate.boot_id.clone(),
+                            revision: candidate.revision,
+                            aliases: self.app.state.pane_relocation_aliases.clone(),
+                        };
+                        match crate::protocol::endpoint::pane_relocations_message(&relocation)
+                            .map_err(std::io::Error::other)
+                            .and_then(|message| {
+                                Self::frame_server_message(&message).map_err(std::io::Error::other)
+                            }) {
+                            Ok(message) => Some(message),
+                            Err(err) => {
+                                warn!(client_id, err = %err, "failed to frame pane relocations");
+                                broken_clients.push(client_id);
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     let completion_framed =
                         match crate::protocol::endpoint::agent_completions_message(&completions)
                             .map_err(std::io::Error::other)
@@ -717,13 +743,17 @@ impl HeadlessServer {
                         broken_clients.push(client_id);
                         continue;
                     };
-                    if projection_framed.is_some_and(|framed| writer.control.send(framed).is_err())
+                    if relocation_framed.is_some_and(|framed| writer.control.send(framed).is_err())
+                        || projection_framed
+                            .is_some_and(|framed| writer.control.send(framed).is_err())
                         || writer.control.send(completion_framed).is_err()
                         || writer.control.send(snapshot_framed).is_err()
                     {
                         broken_clients.push(client_id);
                         continue;
                     }
+                    client.shell_pane_relocation_revision =
+                        Some(self.app.state.pane_relocation_revision);
                     client.shell_snapshot = Some(candidate);
                     client.shell_agent_completions = Some(completions);
                     client.shell_agent_view = agent_view;

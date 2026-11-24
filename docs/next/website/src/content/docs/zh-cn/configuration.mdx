@@ -185,6 +185,10 @@ switch_workspace = "prefix+shift+1..9"
 focus_agent = "prefix+alt+1..9"
 ```
 
+`keys.focus_todos` 默认为 `"prefix+t"`，也可设为直接组合键或快捷键数组。任何已配置的前缀键都可以打开当前工作区的任务列表。
+
+列表获得焦点时，Todos 使用 `keys.resize_pane_up`、`keys.resize_pane_down`、`keys.resize_pane_left`、`keys.resize_pane_right` 和 `keys.resize_mode` 调整大小。
+
 旧版 `[keys.indexed]` 表仍会出于兼容性而解析，但新配置应优先使用显式的动作字段。
 
 ## 自定义命令按键绑定

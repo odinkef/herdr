@@ -12,6 +12,7 @@ mod surface_delta_tests;
 mod surface_interest_tests;
 #[path = "surface_scroll.rs"]
 mod surface_scroll_tests;
+mod tab_transfer;
 
 fn client_shell_projection(
     receiver: &std::sync::mpsc::Receiver<Vec<u8>>,
@@ -19,7 +20,7 @@ fn client_shell_projection(
     Box<protocol::ClientShellSnapshot>,
     protocol::endpoint::EndpointAgentCompletions,
 ) {
-    let read_control = |expected| {
+    let read_control = |expected| loop {
         let ServerMessage::EndpointControl { kind, data } = read_server_message(
             receiver
                 .recv_timeout(Duration::from_secs(1))
@@ -27,8 +28,13 @@ fn client_shell_projection(
         ) else {
             panic!("expected endpoint control {expected}");
         };
+        if kind == protocol::endpoint::PANE_RELOCATIONS_KIND {
+            let _: protocol::endpoint::EndpointPaneRelocations =
+                serde_json::from_str(&data).unwrap();
+            continue;
+        }
         assert_eq!(kind, expected);
-        data
+        break data;
     };
     let completions: protocol::endpoint::EndpointAgentCompletions =
         serde_json::from_str(&read_control(protocol::endpoint::AGENT_COMPLETIONS_KIND)).unwrap();
@@ -1861,6 +1867,55 @@ async fn client_shell_config_diagnostics_follow_keybinding_ownership() {
     );
 
     shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
+async fn workspace_todos_refresh_leaves_foreground_and_active_workspace_untouched() {
+    let mut server = test_headless_server();
+    server.app.state.workspaces = vec![
+        crate::workspace::Workspace::test_new("foreground"),
+        crate::workspace::Workspace::test_new("requested"),
+    ];
+    server.app.state.active = Some(0);
+    server.app.state.ensure_test_terminals();
+    let (first, _first_render) = connect_test_shell(&mut server, 1, 90, 30);
+    let (_second, _second_render) = connect_test_shell(&mut server, 2, 80, 24);
+    let _initial = client_shell_snapshot(&first);
+    server.foreground_client_id = Some(2);
+    let workspace_id = server.app.public_workspace_id(1);
+    let focused_tab = server.shell_tab_id_for_client(1);
+    server.handle_client_shell_endpoint_request(
+        1,
+        server.client_shell_boot_id.clone(),
+        Box::new(api::schema::Request {
+            id: "read".into(),
+            method: api::schema::Method::WorkspaceTodosList(api::schema::WorkspaceTarget {
+                workspace_id: workspace_id.clone(),
+            }),
+        }),
+    );
+    let ready = tokio::time::timeout(Duration::from_secs(5), server.server_event_rx.recv())
+        .await
+        .expect("todo response deadline")
+        .unwrap();
+    server.handle_server_event(ready);
+    let ServerMessage::ClientShellEndpointResponseChunk { data, .. } =
+        read_server_message(first.recv_timeout(Duration::from_secs(5)).unwrap())
+    else {
+        panic!("expected todo reply")
+    };
+    let response: api::schema::SuccessResponse = serde_json::from_slice(&data).unwrap();
+    assert_eq!(
+        response.result,
+        api::schema::ResponseResult::WorkspaceTodos {
+            workspace_id,
+            revision: 0,
+            todos: Vec::new(),
+        }
+    );
+    assert_eq!(server.app.state.active, Some(0));
+    assert_eq!(server.foreground_client_id, Some(2));
+    assert_eq!(server.shell_tab_id_for_client(1), focused_tab);
 }
 
 #[tokio::test]

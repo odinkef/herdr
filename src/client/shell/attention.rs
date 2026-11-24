@@ -20,6 +20,29 @@ pub(super) struct AttentionCycle {
 }
 
 impl AttentionCycle {
+    pub(super) fn relocate(&mut self, aliases: &std::collections::BTreeMap<String, String>) {
+        for target in &mut self.remaining {
+            if let Some(current) = aliases.get(&target.pane_id) {
+                target.pane_id = current.clone();
+            }
+        }
+        self.visited = self
+            .visited
+            .drain()
+            .map(|mut target| {
+                if let Some(current) = aliases.get(&target.pane_id) {
+                    target.pane_id = current.clone();
+                }
+                target
+            })
+            .collect();
+        for pane in &mut self.pending_focus {
+            if let Some(current) = aliases.get(pane) {
+                *pane = current.clone();
+            }
+        }
+    }
+
     pub(super) fn observe_focus(&mut self, previous: Option<&str>, current: Option<&str>) {
         if previous == current {
             return;

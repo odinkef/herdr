@@ -136,11 +136,18 @@ goto = "prefix+g"
 new_tab = "prefix+c"
 next_tab = "prefix+n"
 previous_tab = "prefix+p"
+move_tab_to_workspace = "prefix+shift+m"
 focus_pane_left = "prefix+h"
 navigate_workspace_down = "j"
 navigate_pane_down = "ctrl+j"
 split_horizontal = "prefix+minus"
 ```
+
+`keys.move_tab_to_workspace` opens the native **Move to space…** picker for the
+whole live tab. Its default is `prefix+shift+m` and works with every configured
+prefix. The selected server must advertise `tab.transfer`. Moving tabs within
+the tab bar and the `move_tab_previous` / `move_tab_next` reorder actions retain
+their existing behavior.
 
 `keys.prefix` also accepts an array when you need to enter prefix mode from more than one key, for example to share one config between macOS and a remote Linux machine:
 
@@ -184,6 +191,10 @@ switch_tab = "prefix+1..9"
 switch_workspace = "prefix+shift+1..9"
 focus_agent = "prefix+alt+1..9"
 ```
+
+`keys.focus_todos` defaults to `"prefix+t"` and accepts a direct chord or an array of bindings. Any configured prefix can open the active workspace’s checklist.
+
+Todos uses `keys.resize_pane_up`, `keys.resize_pane_down`, `keys.resize_pane_left`, `keys.resize_pane_right`, and `keys.resize_mode` while the list has focus.
 
 The legacy `[keys.indexed]` table is still parsed for compatibility, but new configs should prefer the explicit action fields.
 

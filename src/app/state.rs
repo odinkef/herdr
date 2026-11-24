@@ -793,6 +793,9 @@ pub struct AppState {
     pub direct_attach_resize_locks: std::collections::HashSet<crate::terminal::TerminalId>,
     pub(crate) pane_id_aliases: std::collections::HashMap<u32, PaneId>,
     pub(crate) public_pane_id_aliases: std::collections::HashMap<String, PaneId>,
+    /// Cached complete retired-to-current public pane map; rebuilt on ownership changes only.
+    pub(crate) pane_relocation_aliases: std::collections::BTreeMap<String, String>,
+    pub(crate) pane_relocation_revision: u64,
     pub workspaces: Vec<Workspace>,
     pub active: Option<usize>,
     pub(crate) previous_pane_focus: Option<PaneFocusTarget>,
@@ -1039,6 +1042,8 @@ impl AppState {
             direct_attach_resize_locks: std::collections::HashSet::new(),
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
+            pane_relocation_aliases: std::collections::BTreeMap::new(),
+            pane_relocation_revision: 0,
             workspaces: Vec::new(),
             active: None,
             previous_pane_focus: None,

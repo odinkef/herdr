@@ -49,6 +49,7 @@ impl ClientContextMenuOverlay {
                 item("New tab", Action::NewTab),
                 item("Rename", Action::Rename),
                 item("Close", Action::Close),
+                item("Move to space…", Action::MoveTabToWorkspace),
             ],
             ClientContextMenuTarget::Pane {
                 source_pane_id,
@@ -288,6 +289,10 @@ impl ClientShellState {
     ) {
         use crate::api::schema::{Method, TabTarget};
 
+        if action == ClientContextMenuAction::MoveTabToWorkspace {
+            self.open_tab_transfer_picker(tab_id, outcome);
+            return;
+        }
         self.push_endpoint_method(
             Method::TabFocus(TabTarget {
                 tab_id: tab_id.clone(),

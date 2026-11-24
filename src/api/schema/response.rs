@@ -18,7 +18,7 @@ use super::plugins::{
 use super::server::ServerCapabilities;
 use super::session::SessionSnapshot;
 use super::tabs::TabInfo;
-use super::workspaces::WorkspaceInfo;
+use super::workspaces::{WorkspaceInfo, WorkspaceTodo};
 use super::worktrees::{WorktreeInfo, WorktreeSourceInfo};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -62,6 +62,11 @@ pub enum ResponseResult {
     WorkspaceList {
         workspaces: Vec<WorkspaceInfo>,
     },
+    WorkspaceTodos {
+        workspace_id: String,
+        revision: u64,
+        todos: Vec<WorkspaceTodo>,
+    },
     WorktreeList {
         source: WorktreeSourceInfo,
         worktrees: Vec<WorktreeInfo>,
@@ -90,6 +95,16 @@ pub enum ResponseResult {
     TabCreated {
         tab: TabInfo,
         root_pane: PaneInfo,
+    },
+    TabTransferred {
+        changed: bool,
+        previous_workspace_id: String,
+        previous_tab_id: String,
+        tab: TabInfo,
+        layout: PaneLayoutSnapshot,
+        pane_id_map: std::collections::BTreeMap<String, String>,
+        created_workspace: Option<WorkspaceInfo>,
+        removed_workspace: Option<WorkspaceInfo>,
     },
     TabList {
         tabs: Vec<TabInfo>,

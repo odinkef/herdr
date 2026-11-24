@@ -5,20 +5,26 @@ const SELECTION_AUTOSCROLL_INTERVAL: std::time::Duration = std::time::Duration::
 const SELECTION_REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
 impl ClientShellState {
-    fn set_sidebar_width_from_column(&mut self, column: u16, outcome: &mut ClientShellInput) {
+    pub(super) fn set_sidebar_width(&mut self, width: u16, outcome: &mut ClientShellInput) -> bool {
         let (min, max) = crate::config::validated_sidebar_bounds(
             self.config.sidebar_min_width,
             self.config.sidebar_max_width,
         )
         .unwrap_or((18, 36));
-        let width = column.saturating_add(1).clamp(min, max);
-        if self.sidebar_width != width {
+        let width = width.clamp(min, max);
+        // A narrow terminal can already clip both widths to the same visible divider.
+        let visible_limit = self
+            .last_composed_size
+            .map_or(u16::MAX, |(cols, _)| cols.saturating_sub(1));
+        if self.sidebar_width.min(visible_limit) != width.min(visible_limit) {
             self.sidebar_width = width;
             self.sidebar_width_manual = true;
             self.invalidate_pane_surface();
             outcome.repaint = true;
             outcome.resize = true;
+            return true;
         }
+        false
     }
 
     fn set_sidebar_section_from_row(&mut self, row: u16, outcome: &mut ClientShellInput) {
@@ -26,7 +32,10 @@ impl ClientShellState {
         if divider.height == 0 {
             return;
         }
-        let ratio = row.saturating_sub(divider.y) as f32 / divider.height as f32;
+        let upper_height = divider
+            .height
+            .saturating_sub(self.hits.todos.sidebar_height);
+        let ratio = row.saturating_sub(divider.y) as f32 / upper_height.max(1) as f32;
         let ratio = ratio.clamp(0.1, 0.9);
         if (self.sidebar_section_split - ratio).abs() > f32::EPSILON {
             self.sidebar_section_split = ratio;
@@ -451,6 +460,11 @@ impl ClientShellState {
     }
 
     fn tab_drop_index_at(&self, point: (u16, u16)) -> Option<usize> {
+        if let Some((cols, rows)) = self.last_composed_size {
+            if !super::contains(self.layout(cols, rows).tab_bar, point) {
+                return None;
+            }
+        }
         let snapshot = self.snapshot.as_deref()?;
         let workspace_id = snapshot.focused_workspace_id.as_deref()?;
         let tabs = snapshot
@@ -1017,13 +1031,23 @@ impl ClientShellState {
             self.focus_visible_notification(outcome);
             return;
         }
+        if self.overlay.is_none()
+            && self.chrome_drag.is_none()
+            && self.handle_todo_mouse(mouse, outcome)
+        {
+            return;
+        }
         if self.handle_mobile_mouse(mouse, outcome) {
             return;
         }
         if mouse.kind == MouseEventKind::Drag(MouseButton::Left) {
             match self.chrome_drag.as_ref() {
+                Some(ClientChromeDrag::Todos(drag)) => {
+                    self.drag_todos(*drag, point, outcome);
+                    return;
+                }
                 Some(ClientChromeDrag::SidebarWidth) => {
-                    self.set_sidebar_width_from_column(mouse.column, outcome);
+                    self.set_sidebar_width(mouse.column.saturating_add(1), outcome);
                     return;
                 }
                 Some(ClientChromeDrag::SidebarSection) => {
@@ -1192,14 +1216,21 @@ impl ClientShellState {
                     }
                     return;
                 }
-                Some(ClientChromeDrag::Tab { .. }) => {
+                Some(ClientChromeDrag::Tab {
+                    transfer_source, ..
+                }) => {
+                    let target = transfer_source
+                        .as_ref()
+                        .and_then(|source| self.tab_transfer_drop_target(source, point));
                     let insert_index = self.tab_drop_index_at(point);
                     if let Some(ClientChromeDrag::Tab {
                         insert_index: current,
+                        transfer_workspace_id,
                         ..
                     }) = self.chrome_drag.as_mut()
                     {
                         *current = insert_index;
+                        *transfer_workspace_id = target;
                     }
                     outcome.repaint = true;
                     return;
@@ -1243,14 +1274,19 @@ impl ClientShellState {
                     .abs_diff(press.start_column)
                     .max(mouse.row.abs_diff(press.start_row));
                 if delta >= 1 {
-                    if let Some(insert_index) = self.tab_drop_index_at(point) {
-                        self.chrome_drag = Some(ClientChromeDrag::Tab {
-                            tab_id: press.tab_id.clone(),
-                            workspace_id: press.workspace_id.clone(),
-                            insert_index: Some(insert_index),
-                        });
-                        outcome.repaint = true;
-                    }
+                    let insert_index = self.tab_drop_index_at(point);
+                    let transfer_workspace_id = press
+                        .transfer_source
+                        .as_ref()
+                        .and_then(|source| self.tab_transfer_drop_target(source, point));
+                    self.chrome_drag = Some(ClientChromeDrag::Tab {
+                        tab_id: press.tab_id.clone(),
+                        workspace_id: press.workspace_id.clone(),
+                        insert_index,
+                        transfer_source: press.transfer_source.clone(),
+                        transfer_workspace_id,
+                    });
+                    outcome.repaint = true;
                 }
                 return;
             }
@@ -1263,8 +1299,27 @@ impl ClientShellState {
                     ClientChromeDrag::Tab {
                         tab_id,
                         workspace_id,
+                        transfer_source,
                         ..
                     } => {
+                        if let Some(source) = transfer_source.as_ref() {
+                            if let Some(workspace_id) = self.tab_transfer_drop_target(source, point)
+                            {
+                                self.submit_tab_transfer(
+                                    source.clone(),
+                                    crate::api::schema::TabTransferDestination::Workspace {
+                                        workspace_id,
+                                    },
+                                    outcome,
+                                );
+                                outcome.repaint = true;
+                                return;
+                            }
+                            if !self.tab_transfer_source_is_current(source) {
+                                outcome.repaint = true;
+                                return;
+                            }
+                        }
                         let insert_index = self.tab_drop_index_at(point);
                         let valid_drop = self.snapshot.as_deref().is_some_and(|snapshot| {
                             snapshot.focused_workspace_id.as_deref() == Some(workspace_id.as_str())
@@ -1357,6 +1412,10 @@ impl ClientShellState {
                             );
                         }
                     }
+                    ClientChromeDrag::Todos(drag) => {
+                        self.drag_todos(drag, point, outcome);
+                        self.persist_chrome_preferences(outcome);
+                    }
                     ClientChromeDrag::SidebarWidth | ClientChromeDrag::SidebarSection => {
                         self.persist_chrome_preferences(outcome);
                     }
@@ -1436,6 +1495,43 @@ impl ClientShellState {
                     } else {
                         self.overlay = None;
                         outcome.repaint = true;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if matches!(self.overlay, Some(ClientShellOverlay::TabTransfer(_))) {
+            match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    self.move_tab_transfer_selection(-1);
+                    outcome.repaint = true;
+                }
+                MouseEventKind::ScrollDown => {
+                    self.move_tab_transfer_selection(1);
+                    outcome.repaint = true;
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let busy = matches!(&self.overlay, Some(ClientShellOverlay::TabTransfer(p)) if p.submitting);
+                    if !busy && super::contains(self.hits.overlay_cancel, point) {
+                        self.overlay = None;
+                        outcome.repaint = true;
+                    } else if !busy {
+                        if let Some((_, index)) = self
+                            .hits
+                            .worktree_rows
+                            .iter()
+                            .find(|(rect, _)| super::contains(*rect, point))
+                            .copied()
+                        {
+                            if let Some(ClientShellOverlay::TabTransfer(p)) = self.overlay.as_mut()
+                            {
+                                p.selected = index;
+                            }
+                            self.submit_tab_transfer_picker(outcome);
+                        } else if super::contains(self.hits.overlay_primary, point) {
+                            self.submit_tab_transfer_picker(outcome);
+                        }
                     }
                 }
                 _ => {}
@@ -1965,7 +2061,7 @@ impl ClientShellState {
                         self.persist_chrome_preferences(outcome);
                     } else {
                         self.chrome_drag = Some(ClientChromeDrag::SidebarWidth);
-                        self.set_sidebar_width_from_column(mouse.column, outcome);
+                        self.set_sidebar_width(mouse.column.saturating_add(1), outcome);
                     }
                     return;
                 }
@@ -2133,6 +2229,7 @@ impl ClientShellState {
                                     workspace_id: tab.workspace_id.clone(),
                                     start_column: mouse.column,
                                     start_row: mouse.row,
+                                    transfer_source: self.capture_tab_transfer_source(&tab.tab_id),
                                 })
                             })
                     })

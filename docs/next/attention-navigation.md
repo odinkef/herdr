@@ -14,6 +14,7 @@ next_tab = ["prefix+n", "alt+pageup"]
 previous_tab = ["prefix+p", "alt+pagedown"]
 move_tab_previous = "ctrl+shift+left"
 move_tab_next = "ctrl+shift+right"
+move_tab_to_workspace = "prefix+shift+m"
 ```
 
 Ctrl+Alt+A and either Ctrl+A then lowercase a or Ctrl+B then lowercase a share
@@ -40,6 +41,54 @@ To remove prefix then a, set `next_attention_agent = "ctrl+alt+a"`.
 To disable both, set `next_attention_agent = ""`.
 After editing this configuration, reload with **prefix then r**. The binding is
 unbound by default in other configurations.
+
+## Move a live tab between spaces
+
+Press Ctrl+A then Shift+M or Ctrl+B then Shift+M to open **Move to space…**.
+The configurable action is `move_tab_to_workspace`; its default is
+`prefix+shift+m`, so the existing prefix array enables both. Right-clicking an
+inactive tab opens the same picker for that tab without selecting it. Type to
+filter all other spaces on the same server, including collapsed groups, or
+choose **New space…** to start its naming dialog with your search. Escape
+cancels without changing focus. You can also drag a tab directly onto a visible
+sidebar space, including a worktree child. The highlighted destination receives
+the tab on release. Hovering does not switch spaces; other machines, headers,
+blank areas, and the source space reject drops.
+
+The move appends and follows the entire live tab, preserving its label, split
+tree and ratios, zoom, focused pane, terminals, processes, directories,
+scrollback, and agent state. The source space disappears only if empty. Other
+worktree spaces and files stay in place, and a new destination starts no shell.
+Ctrl+Shift+Left/Right keep their tab reorder behavior.
+
+For scripts:
+
+```bash
+herdr tab move --current --workspace w2
+herdr tab move w1:t2 --new-workspace --label review --no-focus
+```
+
+Read destination IDs from the response. Public tab and pane IDs change; live
+process environments retain their original strings. Pane aliases preserve
+supported `--current` addressing, and this command resolves the caller's current
+tab rather than trusting its inherited tab/workspace environment variables.
+The API is `tab.transfer`; existing `tab.move` remains reorder-only.
+
+Both the client and its selected server must support this addition. An older
+server remains usable and produces an unsupported-action notice. Picker and
+drag captures expire on reconnect or server replacement; uncertain requests
+are never retried automatically.
+
+The local `fork-integrated` branch combines these controls with workspace
+Todos. Press either configured prefix, then `t`, to open the active space's
+checklist. While the list is focused, Alt+Shift+Up/Down changes its height and
+Alt+Shift+Left/Right changes the sidebar width. Press either prefix, then
+Shift+R, to enter resize mode. Drag the divider above Todos or the right edge
+of the sidebar to resize it with the mouse.
+
+Tabs moved into another space show that space's list. A newly created space
+starts with an empty list. See the [fork installation guide](../../FORK_SETUP.md)
+for building the combined branch, backing up session state, and activating it.
 
 ## Rebuild and validate
 
@@ -159,3 +208,53 @@ configuration backup directory above.
    and check **prefix → ?**. No rebuild or server restart is needed.
 6. If a shortcut never reaches Herdr, check whether Ghostty or the desktop
    intercepts it.
+
+
+## Native tab transfer verification (18 November 2026)
+
+The candidate in `/home/odin/herdr-worktrees/native-tab-transfer` builds with
+pinned Rust 1.96.1 and Zig 0.16.0. Native Linux `just ci` passed all 4,073 Rust
+tests (15 existing manual/profile tests skipped), 150 Python maintenance tests,
+UI architecture checks, release workflow tests, and integration assets. The
+unreleased API schema, documentation contracts, configuration reference, and
+formatting checks passed. `just build` produced `target/release/herdr`.
+
+The release build passed 13 disposable PTY checks: both prefix cancellations,
+zoomed three-pane transfer, exact split tree and ratios, labels and agent
+state, stable child PIDs and `/dev/pts` descriptors, terminal IDs and history,
+refreshed mouse focus, no-op and invalid destination behavior, shell-free new
+spaces, focused-terminal current directory, no-focus selection, repeated
+caller aliases, unchanged reordering, both picker submission paths, and live
+handoff followed by allocation above a retired highest workspace prefix. Three
+further checks passed against the original server binary, including feature
+gating and continued ordinary typing. The test sessions were stopped and all
+test clients closed.
+
+Ghostty 1.3.1 attached to an isolated session and passed the runtime identity,
+layout, label, and agent-state checks through the initial transfer. Its
+interactive portion could not be validated on this display: the GTK window
+remained blank with `eglExportDMABUFImage` failures, and the input log contained
+terminal replies but no injected keys or mouse events. Direct window focus,
+explicitly addressed events, isolated configuration, and software GTK/GL
+settings did not resolve it. This is not counted as a passing interactive
+Ghostty smoke; rerun `.local/verify-ghostty.sh` on a working graphical display.
+Native UI tests and the PTY mouse/picker checks passed.
+
+The 1- and 15-pane rendering and fanout profiles ran at fixed geometry. With
+two clients, steady-state median fanout times for zero versus 4,096 aliases
+were 1,349 / 1,352 microseconds at one pane and 1,633 / 1,622 microseconds at
+15 panes. The mapping was sent once, with no resend at unchanged revisions.
+The general `just bench-render-scale` recipe finished six profiles successfully;
+one existing native-file graphics profile failed because this filesystem
+cannot supply its required CoW source retention. The feature's render and
+relocation-fanout profiles passed; the omnibus benchmark is recorded as
+partially blocked, rather than green.
+
+Evidence is retained under the candidate's `.local/`: `ci.log`,
+`release-build.log`, `pty-smoke.log`, `legacy-smoke.log`, `ghostty-smoke.log`,
+`render-scale.log`, `fanout-profile.log`, and `verification.json`.
+`native-tab-transfer.patch` contains only this feature's differences from the
+preserved local fork, including its untracked attention-navigation files.
+Hash and Git-status checks confirm the original checkout, installed executable,
+and personal configuration were preserved. The running personal session was
+never addressed; no installation, restart, or commit was performed.

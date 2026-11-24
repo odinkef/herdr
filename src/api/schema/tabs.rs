@@ -46,3 +46,28 @@ pub struct TabInfo {
     pub pane_count: usize,
     pub agent_status: AgentStatus,
 }
+
+/// Transfer a complete live tab; `tab.move` continues to mean tab-bar reordering.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TabTransferParams {
+    pub tab_id: String,
+    pub destination: TabTransferDestination,
+    #[serde(default = "transfer_focus_default")]
+    pub focus: bool,
+}
+
+fn transfer_focus_default() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TabTransferDestination {
+    Workspace {
+        workspace_id: String,
+    },
+    NewWorkspace {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
+}

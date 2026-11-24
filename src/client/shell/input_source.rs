@@ -17,6 +17,9 @@ impl ClientShellState {
             self.mode,
             ClientShellMode::Prefix
                 | ClientShellMode::Navigate
+                | ClientShellMode::Todos
+                | ClientShellMode::TodoPrefix
+                | ClientShellMode::TodoResize
                 | ClientShellMode::Resize
                 | ClientShellMode::Copy
         )

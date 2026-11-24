@@ -15,6 +15,7 @@ pub(super) fn run_tab_command(args: &[String]) -> std::io::Result<i32> {
         "focus" => tab_focus(&args[1..]),
         "rename" => tab_rename(&args[1..]),
         "close" => tab_close(&args[1..]),
+        "move" => tab_move(&args[1..]),
         "help" | "--help" | "-h" => {
             print_tab_help();
             Ok(0)
@@ -184,4 +185,147 @@ fn print_tab_help() {
     eprintln!("  herdr tab focus <tab_id>");
     eprintln!("  herdr tab rename <tab_id> <label>");
     eprintln!("  herdr tab close <tab_id>");
+    eprintln!("  herdr tab move (<tab_id> | --current) (--workspace <id> | --new-workspace [--label <name>]) [--focus | --no-focus]");
+}
+
+fn tab_move(args: &[String]) -> std::io::Result<i32> {
+    let caller = super::target::caller_pane_id();
+    let (tab_id, current, destination, focus) = match parse_tab_move_args(args) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("{error}");
+            return Ok(2);
+        }
+    };
+    let tab_id = if current {
+        let Some(caller_pane_id) = caller else {
+            eprintln!("--current requires a calling Herdr pane (HERDR_PANE_ID)");
+            return Ok(2);
+        };
+        // Processes keep their original environment after a transfer. Resolve
+        // the retired pane alias on the server instead of reading HERDR_TAB_ID.
+        let response = super::send_request(&crate::api::schema::Request {
+            id: "cli:tab:move:current".into(),
+            method: crate::api::schema::Method::PaneCurrent(
+                crate::api::schema::PaneCurrentParams {
+                    caller_pane_id: Some(caller_pane_id),
+                },
+            ),
+        })?;
+        if response.get("error").is_some() {
+            return super::print_response(&response);
+        }
+        response
+            .pointer("/result/pane/tab_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| std::io::Error::other("server returned no calling pane tab"))?
+            .to_owned()
+    } else {
+        tab_id.expect("parser requires tab ID or current")
+    };
+    super::runtime::tab_transfer(crate::api::schema::TabTransferParams {
+        tab_id,
+        destination,
+        focus,
+    })
+}
+
+type ParsedTabMove = (
+    Option<String>,
+    bool,
+    crate::api::schema::TabTransferDestination,
+    bool,
+);
+
+fn parse_tab_move_args(args: &[String]) -> Result<ParsedTabMove, String> {
+    use crate::api::schema::TabTransferDestination;
+    let mut tab_id = None;
+    let mut current = false;
+    let mut workspace = None;
+    let mut new_workspace = false;
+    let mut label = None;
+    let mut focus = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--current" if !current && tab_id.is_none() => current = true,
+            "--workspace" if workspace.is_none() && !new_workspace => {
+                index += 1;
+                workspace = Some(super::normalize_workspace_id(
+                    args.get(index)
+                        .filter(|v| !v.starts_with('-'))
+                        .ok_or("missing value for --workspace")?,
+                ));
+            }
+            "--new-workspace" if workspace.is_none() && !new_workspace => new_workspace = true,
+            "--label" if label.is_none() => {
+                index += 1;
+                label = Some(args.get(index).ok_or("missing value for --label")?.clone());
+            }
+            "--focus" | "--no-focus" if focus.is_none() => focus = Some(args[index] == "--focus"),
+            value if !value.starts_with('-') && tab_id.is_none() && !current => {
+                tab_id = Some(super::normalize_tab_id(value))
+            }
+            other => {
+                return Err(format!(
+                    "unknown, duplicate, or conflicting argument: {other}"
+                ))
+            }
+        }
+        index += 1;
+    }
+    if tab_id.is_none() && !current {
+        return Err("specify a tab ID or --current".into());
+    }
+    let destination = if new_workspace {
+        TabTransferDestination::NewWorkspace { label }
+    } else {
+        if label.is_some() {
+            return Err("--label requires --new-workspace".into());
+        }
+        TabTransferDestination::Workspace {
+            workspace_id: workspace.ok_or("specify --workspace or --new-workspace")?,
+        }
+    };
+    Ok((tab_id, current, destination, focus.unwrap_or(true)))
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| (*v).to_owned()).collect()
+    }
+    #[test]
+    fn tab_move_defaults_to_follow_and_requires_exclusive_source_and_destination() {
+        let parsed = parse_tab_move_args(&args(&["w1:t1", "--workspace", "w2"])).unwrap();
+        assert!(parsed.3);
+        let parsed = parse_tab_move_args(&args(&[
+            "--current",
+            "--new-workspace",
+            "--label",
+            "build",
+            "--no-focus",
+        ]))
+        .unwrap();
+        assert!(parsed.1);
+        assert!(!parsed.3);
+        assert_eq!(
+            parsed.2,
+            crate::api::schema::TabTransferDestination::NewWorkspace {
+                label: Some("build".into())
+            }
+        );
+        for input in [
+            vec![],
+            vec!["w1:t1"],
+            vec!["--workspace", "w2"],
+            vec!["w1:t1", "--current", "--workspace", "w2"],
+            vec!["w1:t1", "--new-workspace", "--workspace", "w2"],
+            vec!["w1:t1", "--workspace", "w2", "--label", "bad"],
+            vec!["w1:t1", "--workspace", "w2", "--focus", "--no-focus"],
+        ] {
+            assert!(parse_tab_move_args(&args(&input)).is_err(), "{input:?}");
+        }
+    }
 }

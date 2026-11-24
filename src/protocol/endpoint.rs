@@ -31,6 +31,26 @@ pub const AGENT_VIEW_PROJECTION_CAPABILITY: &str = "agent_view_projection";
 pub const AGENT_VIEW_PROJECTION_KIND: &str = "endpoint.agent-view.v1";
 pub const AGENT_COMPLETIONS_CAPABILITY: &str = "agent_completions";
 pub const AGENT_COMPLETIONS_KIND: &str = "endpoint.agent-completions.v1";
+pub const PANE_RELOCATIONS_CAPABILITY: &str = "pane_relocations";
+pub const PANE_RELOCATIONS_KIND: &str = "endpoint.pane-relocations.v1";
+
+/// Optional identity companion. The complete normalized map becomes valid at `revision`
+/// and remains valid for subsequent snapshots on this server boot and connection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndpointPaneRelocations {
+    pub boot_id: String,
+    pub revision: u64,
+    pub aliases: std::collections::BTreeMap<String, String>,
+}
+
+pub fn pane_relocations_message(
+    projection: &EndpointPaneRelocations,
+) -> serde_json::Result<ServerMessage> {
+    Ok(ServerMessage::EndpointControl {
+        kind: PANE_RELOCATIONS_KIND.into(),
+        data: serde_json::to_string(projection)?,
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointAgentCompletions {
@@ -174,6 +194,7 @@ impl EndpointServerWelcome {
                 HEALTH_CHECK_CAPABILITY.into(),
                 AGENT_VIEW_PROJECTION_CAPABILITY.into(),
                 AGENT_COMPLETIONS_CAPABILITY.into(),
+                PANE_RELOCATIONS_CAPABILITY.into(),
             ],
             error: None,
         }
@@ -385,6 +406,7 @@ mod tests {
                 HEALTH_CHECK_CAPABILITY.to_string(),
                 AGENT_VIEW_PROJECTION_CAPABILITY.to_string(),
                 AGENT_COMPLETIONS_CAPABILITY.to_string(),
+                PANE_RELOCATIONS_CAPABILITY.to_string(),
             ]
         );
     }

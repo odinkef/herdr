@@ -16,6 +16,16 @@ pub(super) struct EndpointAgentPresentation {
 }
 
 impl EndpointAgentPresentation {
+    pub(super) fn relocate(&mut self, aliases: &std::collections::BTreeMap<String, String>) {
+        super::pane_relocations::relocate_watermarks(&mut self.acknowledged, aliases);
+        super::pane_relocations::relocate_watermarks(&mut self.completed, aliases);
+        for (retired, current) in aliases {
+            if self.working.remove(retired) {
+                self.working.insert(current.clone());
+            }
+        }
+    }
+
     pub(super) fn receive_completions(
         &mut self,
         generation: Option<u64>,
@@ -474,5 +484,53 @@ mod tests {
         assert!(!presentation.acknowledge_surface(&mut completed, &surface(1), Some(true)));
         assert!(!presentation.acknowledge_surface(&mut completed, &surface(2), Some(false)));
         assert_eq!(completed.agents[0].agent_status, AgentStatus::Done);
+    }
+    #[test]
+    fn relocation_preserves_two_clients_independent_completion_histories_across_skipped_moves() {
+        let mut viewer = EndpointAgentPresentation::default();
+        let mut background = EndpointAgentPresentation::default();
+        for presentation in [&mut viewer, &mut background] {
+            presentation.project_snapshot(&mut snapshot(AgentStatus::Working, 4, 1));
+            presentation.project_snapshot(&mut snapshot(AgentStatus::Idle, 5, 2));
+        }
+        let mut viewed = snapshot(AgentStatus::Idle, 5, 2);
+        viewer.project_snapshot(&mut viewed);
+        assert!(viewer.acknowledge_surface(&mut viewed, &surface(2), Some(true)));
+        let aliases = std::collections::BTreeMap::from([
+            ("agent-pane".into(), "third-location".into()),
+            ("second-location".into(), "third-location".into()),
+        ]);
+        // The complete map covers repeated transfers even when neither client saw
+        // the intermediate workspace/snapshot. A same-boot reconnect uses the same data.
+        for presentation in [&mut viewer, &mut background] {
+            presentation.relocate(&aliases);
+        }
+        let mut next_viewer = snapshot(AgentStatus::Idle, 5, 1);
+        next_viewer.agents[0].pane_id = "third-location".into();
+        let mut next_background = next_viewer.clone();
+        viewer.project_snapshot_for_generation(&mut next_viewer, Some(2));
+        background.project_snapshot_for_generation(&mut next_background, Some(2));
+        assert_eq!(next_viewer.agents[0].agent_status, AgentStatus::Idle);
+        assert_eq!(next_background.agents[0].agent_status, AgentStatus::Done);
+    }
+
+    #[test]
+    fn relocation_merges_acknowledgements_and_completions_by_maximum_and_work_by_union() {
+        let mut presentation = EndpointAgentPresentation {
+            acknowledged: [("a".into(), 8), ("b".into(), 4)].into_iter().collect(),
+            completed: [("a".into(), 6), ("b".into(), 10)].into_iter().collect(),
+            working: ["a".into(), "unrelated".into()].into_iter().collect(),
+            ..Default::default()
+        };
+        presentation.relocate(&std::collections::BTreeMap::from([(
+            "a".into(),
+            "b".into(),
+        )]));
+        assert_eq!(presentation.acknowledged["b"], 8);
+        assert_eq!(presentation.completed["b"], 10);
+        assert_eq!(
+            presentation.working,
+            HashSet::from(["b".into(), "unrelated".into()])
+        );
     }
 }

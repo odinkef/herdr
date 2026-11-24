@@ -134,13 +134,11 @@ pub(super) fn render_collapsed(
             let selected = state.selected_workspace_id.is_some_and(|target| {
                 target.matches(&endpoint.endpoint_id, &workspace.workspace_id)
             });
-            let selection_background = if palette.selection_bg == ratatui::style::Color::Reset {
-                palette.active_row_bg
-            } else {
-                palette.selection_bg
-            };
             if selected {
-                buffer.set_style(rect, Style::default().bg(selection_background));
+                buffer.set_style(
+                    rect,
+                    Style::default().bg(super::sidebar::selection_background(palette)),
+                );
             } else if focused {
                 buffer.set_style(
                     rect,
@@ -249,10 +247,14 @@ pub(super) fn render_expanded(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
+    let upper = Rect {
+        height: area.height.saturating_sub(state.todo_height),
+        ..area
+    };
     let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
+        crate::ui::expanded_sidebar_sections(upper, state.sidebar_section_split);
     hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+        crate::ui::sidebar_section_divider_rect(upper, state.sidebar_section_split);
     put_text(
         buffer,
         workspace_area.x,

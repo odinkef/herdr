@@ -108,9 +108,16 @@ fn preserve_snapshot_history(path: &Path) -> io::Result<()> {
     if let Some((_, latest)) = existing.last() {
         let previous_bytes = std::fs::read(latest)?;
         if let Ok(previous) = serde_json::from_slice::<SessionSnapshot>(&previous_bytes) {
-            if super::snapshot::layout_fingerprint(&snapshot).is_some_and(|fingerprint| {
-                super::snapshot::layout_fingerprint(&previous).as_ref() == Some(&fingerprint)
-            }) {
+            let same_todos = snapshot
+                .workspaces
+                .iter()
+                .map(|ws| &ws.todos)
+                .eq(previous.workspaces.iter().map(|ws| &ws.todos));
+            if same_todos
+                && super::snapshot::layout_fingerprint(&snapshot).is_some_and(|fingerprint| {
+                    super::snapshot::layout_fingerprint(&previous).as_ref() == Some(&fingerprint)
+                })
+            {
                 return Ok(());
             }
         }

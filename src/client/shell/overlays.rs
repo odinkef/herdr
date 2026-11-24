@@ -73,6 +73,9 @@ pub(crate) fn render_client_overlay(
         ClientShellOverlay::WorktreeCreate(v) => {
             worktree_overlays::render_worktree_create_overlay(b, v, p)
         }
+        ClientShellOverlay::TabTransfer(v) => {
+            worktree_overlays::render_filtered_list_overlay(b, &v.list(s), p, true)
+        }
         ClientShellOverlay::WorktreeOpen(v) => {
             worktree_overlays::render_worktree_open_overlay(b, v, p)
         }

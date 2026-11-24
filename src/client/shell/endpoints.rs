@@ -17,6 +17,7 @@ pub(crate) struct ClientShellEndpoint {
     /// Connection generation that produced `snapshot`. `None` is reserved for local tests.
     pub(crate) snapshot_generation: Option<u64>,
     pub(crate) agent_recency: HashMap<String, u64>,
+    pub(super) pane_relocations: super::pane_relocations::PaneRelocations,
     pub(super) agent_presentation: super::endpoint_agent_state::EndpointAgentPresentation,
     pub(crate) agent_view_projection: Option<ClientEndpointAgentViewProjection>,
     pending_agent_view_projection: Option<ClientEndpointAgentViewProjection>,
@@ -78,6 +79,9 @@ impl ClientShellState {
                 agent_recency: previous
                     .map(|endpoint| endpoint.agent_recency.clone())
                     .unwrap_or_default(),
+                pane_relocations: previous
+                    .map(|endpoint| endpoint.pane_relocations.clone())
+                    .unwrap_or_default(),
                 agent_presentation: previous
                     .map(|endpoint| endpoint.agent_presentation.clone())
                     .unwrap_or_default(),
@@ -130,6 +134,7 @@ impl ClientShellState {
             endpoint.methods = None;
             endpoint.agent_recency.clear();
             endpoint.agent_presentation = Default::default();
+            endpoint.pane_relocations = Default::default();
             endpoint.agent_view_projection = None;
             endpoint.pending_agent_view_projection = None;
             endpoint.agent_view_projection_supported = false;
@@ -148,8 +153,12 @@ impl ClientShellState {
             self.clear_machine_diagnostic(endpoint_id);
         }
         if endpoint_id == &self.active_endpoint_id && status != ClientEndpointStatus::Online {
+            // Retained snapshots can stay visible; retire every captured transfer target
+            // before a welcome marks the new connection Online.
+            self.invalidate_tab_transfer_targets();
             self.attention = Default::default();
             self.pending_workspace_highlight = None;
+            self.reset_todos();
         }
         if let Some(endpoint) = self
             .endpoints
@@ -203,6 +212,9 @@ impl ClientShellState {
             .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
         {
             endpoint.methods = methods;
+        }
+        if endpoint_id == &self.active_endpoint_id {
+            self.update_todo_availability();
         }
     }
 
@@ -576,6 +588,7 @@ impl ClientShellState {
         if boot_changed {
             self.retire_endpoint_notifications(endpoint_id);
         }
+        self.apply_endpoint_pane_relocations(index, &snapshot, generation);
         self.endpoints[index]
             .agent_presentation
             .project_snapshot_for_generation(&mut snapshot, generation);
@@ -740,6 +753,7 @@ pub(super) fn local_endpoint() -> ClientShellEndpoint {
         snapshot_generation: None,
         agent_recency: HashMap::new(),
         agent_presentation: Default::default(),
+        pane_relocations: Default::default(),
         agent_view_projection: None,
         pending_agent_view_projection: None,
         agent_view_projection_supported: false,

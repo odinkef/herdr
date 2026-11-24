@@ -95,7 +95,7 @@ impl ClientShellState {
         matches!(
             self.mode,
             ClientShellMode::Prefix | ClientShellMode::Navigate
-        )
+        ) || self.todos_focused()
     }
 
     pub(crate) fn set_host_reports_key_releases(&mut self, reports: bool) {
@@ -240,6 +240,8 @@ impl ClientShellState {
             if let Some(update) = host_theme_update(&event) {
                 push_host_theme_update(&mut outcome.requests, update);
             }
+            let left_todos = self.todos_focused();
+            let first_action = outcome.actions.len();
             match event {
                 RawInputEvent::Key(key) => {
                     let key = self.host_erase_key(key);
@@ -368,6 +370,9 @@ impl ClientShellState {
                 | RawInputEvent::HostPaletteColors { .. }
                 | RawInputEvent::HostCellSizeReport { .. }
                 | RawInputEvent::Unsupported => {}
+            }
+            if left_todos && self.mode == ClientShellMode::Terminal {
+                self.remember_todo_exit_focus(&outcome.actions[first_action..]);
             }
             self.reconcile_input_source();
         }
@@ -555,6 +560,9 @@ impl ClientShellState {
         {
             return false;
         }
+        if self.mode == ClientShellMode::TodoEditor && self.overlay.is_none() {
+            return true;
+        }
         if self.mode == ClientShellMode::Copy
             && self.overlay.is_none()
             && self
@@ -566,7 +574,10 @@ impl ClientShellState {
         }
         matches!(
             self.overlay.as_ref(),
-            Some(ClientShellOverlay::Rename(_))
+            Some(ClientShellOverlay::TabTransfer(ClientTabTransferOverlay {
+                submitting: false,
+                ..
+            })) | Some(ClientShellOverlay::Rename(_))
                 | Some(ClientShellOverlay::WorktreeCreate(
                     ClientWorktreeCreateOverlay {
                         creating: false,
@@ -612,6 +623,13 @@ impl ClientShellState {
         key: &crate::input::TerminalKey,
         outcome: &mut ClientShellInput,
     ) -> Option<ClientInputTarget> {
+        if key.code == KeyCode::Esc && (self.chrome_drag.is_some() || self.tab_press.is_some()) {
+            self.chrome_drag = None;
+            self.tab_press = None;
+            self.workspace_press = None;
+            outcome.repaint = true;
+            return None;
+        }
         if self.handle_modal_paste_shortcut_with(key, outcome, crate::platform::read_clipboard_text)
         {
             return None;
@@ -681,7 +699,7 @@ impl ClientShellState {
                     outcome.repaint = true;
                     return None;
                 }
-                self.focused_pane_id().map(ClientInputTarget::Pane)
+                self.input_pane_id().map(ClientInputTarget::Pane)
             }
             ClientShellMode::Prefix => {
                 let return_mode = if self.copy_mode.as_ref().is_some_and(|copy_mode| {
@@ -694,7 +712,7 @@ impl ClientShellState {
                 if self.config.keybinds.matches_prefix(key) {
                     self.mode = return_mode;
                     outcome.repaint = true;
-                    return self.focused_pane_id().map(ClientInputTarget::Pane);
+                    return self.input_pane_id().map(ClientInputTarget::Pane);
                 }
                 if key.code == KeyCode::Esc {
                     self.mode = return_mode;
@@ -717,7 +735,34 @@ impl ClientShellState {
                 self.route_navigate_key(key, outcome);
                 None
             }
-            ClientShellMode::Resize => {
+            ClientShellMode::Todos => {
+                if self.config.keybinds.matches_prefix(key) {
+                    self.mode = ClientShellMode::TodoPrefix;
+                    outcome.repaint = true;
+                } else if !self.apply_todo_resize_binding(
+                    crate::input::resolve_direct_binding(&self.config.keybinds.keybinds, key),
+                    outcome,
+                ) {
+                    self.route_todo_key(key, outcome);
+                }
+                None
+            }
+            ClientShellMode::TodoPrefix => {
+                self.mode = ClientShellMode::Todos;
+                outcome.repaint = true;
+                if key.code != KeyCode::Esc && !self.config.keybinds.matches_prefix(key) {
+                    self.apply_todo_resize_binding(
+                        crate::input::resolve_prefix_binding(&self.config.keybinds.keybinds, key),
+                        outcome,
+                    );
+                }
+                None
+            }
+            ClientShellMode::TodoEditor => {
+                self.route_todo_key(key, outcome);
+                None
+            }
+            ClientShellMode::Resize | ClientShellMode::TodoResize => {
                 self.route_resize_key(key, outcome);
                 None
             }
@@ -1039,6 +1084,25 @@ impl ClientShellState {
         );
     }
 
+    fn apply_todo_resize_binding(
+        &mut self,
+        binding: Option<crate::input::KeybindMatch>,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        let Some(crate::input::KeybindMatch::Action(action)) = binding else {
+            return false;
+        };
+        if action == crate::input::KeybindAction::EnterResizeMode {
+            self.mode = ClientShellMode::TodoResize;
+            outcome.repaint = true;
+        } else if let Some(direction) = actions::resize_direction(action) {
+            self.resize_todos(direction, outcome);
+        } else {
+            return false;
+        }
+        true
+    }
+
     fn route_resize_key(
         &mut self,
         key: &crate::input::TerminalKey,
@@ -1050,7 +1114,11 @@ impl ClientShellState {
             || resize_bindings.matches_prefix_key(key)
             || resize_bindings.matches_direct_key(key)
         {
-            self.mode = self.copy_or_terminal_mode();
+            self.mode = if self.mode == ClientShellMode::TodoResize {
+                ClientShellMode::Todos
+            } else {
+                self.copy_or_terminal_mode()
+            };
             outcome.repaint = true;
             return;
         }
@@ -1065,7 +1133,12 @@ impl ClientShellState {
             _ => None,
         };
         if let Some(action) = action {
-            self.record_binding(crate::input::KeybindMatch::Action(action), outcome);
+            let binding = crate::input::KeybindMatch::Action(action);
+            if self.mode == ClientShellMode::TodoResize {
+                self.apply_todo_resize_binding(Some(binding), outcome);
+            } else {
+                self.record_binding(binding, outcome);
+            }
         }
     }
 
@@ -1119,7 +1192,7 @@ impl ClientShellState {
         if self.popup_pending || self.overlay.is_some() || self.mode != ClientShellMode::Terminal {
             return None;
         }
-        self.focused_pane_id()
+        self.input_pane_id()
             .map(crate::protocol::ClientClipboardImageTarget::Pane)
     }
 
@@ -1183,7 +1256,7 @@ impl ClientShellState {
     }
 
     fn push_focused_pane_event(&self, event: ClientPaneInputEvent, outcome: &mut ClientShellInput) {
-        if let Some(pane_id) = self.focused_pane_id() {
+        if let Some(pane_id) = self.input_pane_id() {
             super::push_target_event(ClientInputTarget::Pane(pane_id), event, outcome);
         }
     }

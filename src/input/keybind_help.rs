@@ -154,14 +154,36 @@ pub(crate) fn keybind_help_groups(
                     "next attention agent",
                 ),
                 entry(indexed_label(&keybinds.focus_agent), "focus agent 1-9"),
+                entry(
+                    binding_label(&keybinds.focus_todos),
+                    "focus workspace todos",
+                ),
                 entry(binding_label(&keybinds.new_tab), "new tab"),
                 entry(binding_label(&keybinds.rename_tab), "rename tab"),
                 entry(binding_label(&keybinds.previous_tab), "previous tab"),
                 entry(binding_label(&keybinds.next_tab), "next tab"),
                 entry(binding_label(&keybinds.move_tab_previous), "move tab left"),
                 entry(binding_label(&keybinds.move_tab_next), "move tab right"),
+                entry(
+                    binding_label(&keybinds.move_tab_to_workspace),
+                    "move tab to space",
+                ),
                 entry(indexed_label(&keybinds.switch_tab), "switch tab 1-9"),
                 entry(binding_label(&keybinds.close_tab), "close tab"),
+            ],
+        ),
+        (
+            "todos",
+            vec![
+                entry("up / down", "select todo"),
+                entry("space", "check or uncheck todo"),
+                entry("n / enter", "start / save new todo"),
+                entry(
+                    binding_label(&keybinds.resize_mode),
+                    "resize todos with arrows or h/j/k/l",
+                ),
+                entry("delete", "delete selected todo"),
+                entry("esc", "cancel editor / return to pane"),
             ],
         ),
         (

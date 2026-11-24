@@ -18,6 +18,8 @@ use crate::terminal::{TerminalId, TerminalRuntime, TerminalRuntimeRegistry, Term
 mod aggregate;
 mod git;
 mod tab;
+mod todos;
+pub(crate) use todos::WorkspaceTodoList;
 
 use self::git::git_status_cache_key_for_space;
 pub(crate) use self::{git::git_status_snapshot_for_cwd_with_demand, tab::MovedPane};
@@ -149,9 +151,13 @@ pub(crate) fn public_tab_id_for_number(workspace_id: &str, tab_number: usize) ->
 }
 
 pub(crate) fn reserve_workspace_ids(workspaces: &[Workspace]) {
-    let Some(next) = workspaces
-        .iter()
-        .filter_map(|workspace| public_workspace_number(&workspace.id))
+    reserve_workspace_id_names(workspaces.iter().map(|workspace| workspace.id.as_str()));
+}
+
+pub(crate) fn reserve_workspace_id_names<'a>(ids: impl IntoIterator<Item = &'a str>) {
+    let Some(next) = ids
+        .into_iter()
+        .filter_map(public_workspace_number)
         .max()
         .and_then(|max| u64::try_from(max.checked_add(1)?).ok())
     else {
@@ -194,6 +200,7 @@ pub struct Workspace {
     pub(crate) cached_git_space: Option<GitSpaceMetadata>,
     /// Explicit Herdr-managed worktree grouping provenance.
     pub worktree_space: Option<WorktreeSpaceMembership>,
+    pub(crate) todos: WorkspaceTodoList,
     pub(crate) metadata_tokens: crate::metadata_tokens::MetadataTokens,
     pub(crate) metadata_token_sequences: HashMap<String, u64>,
     /// Public pane numbers within this workspace. Closed pane numbers are not reused.
@@ -233,6 +240,57 @@ impl Workspace {
         }
     }
 
+    /// Adopt a complete live tab without creating a terminal or touching the filesystem.
+    pub(crate) fn from_existing_tab(
+        label: Option<String>,
+        identity_cwd: PathBuf,
+        tab: Tab,
+    ) -> Self {
+        let mut workspace = Self {
+            id: generate_workspace_id(),
+            custom_name: label,
+            cached_auto_label: fallback_label_from_cwd(&identity_cwd),
+            cached_identity_cwd: identity_cwd.clone(),
+            cached_git_status_key: identity_cwd.clone(),
+            identity_cwd,
+            cached_git_branch: None,
+            cached_git_ahead_behind: None,
+            cached_git_space: None,
+            todos: WorkspaceTodoList::default(),
+            worktree_space: None,
+            metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
+            metadata_token_sequences: HashMap::new(),
+            public_pane_numbers: HashMap::new(),
+            next_public_pane_number: 1,
+            next_public_tab_number: 1,
+            tabs: Vec::new(),
+            active_tab: 0,
+            #[cfg(test)]
+            test_runtimes: HashMap::new(),
+        };
+        workspace.append_existing_tab(tab);
+        workspace
+    }
+
+    pub(crate) fn take_tab_for_transfer(&mut self, index: usize) -> Tab {
+        let tab = self.tabs.remove(index);
+        for pane in tab.panes.keys() {
+            self.public_pane_numbers.remove(pane);
+        }
+        self.adjust_active_tab_after_removal(index);
+        tab
+    }
+
+    pub(crate) fn append_existing_tab(&mut self, mut tab: Tab) -> usize {
+        tab.number = self.next_public_tab_number;
+        self.next_public_tab_number += 1;
+        for pane in tab.layout.pane_ids() {
+            self.register_new_pane_with_number(pane, self.next_public_pane_number);
+        }
+        self.tabs.push(tab);
+        self.tabs.len() - 1
+    }
+
     pub(crate) fn from_existing_pane(
         label: Option<String>,
         tab_label: Option<String>,
@@ -260,6 +318,7 @@ impl Workspace {
             cached_git_ahead_behind: None,
             cached_git_space,
             worktree_space: None,
+            todos: WorkspaceTodoList::default(),
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
             public_pane_numbers,
@@ -412,6 +471,7 @@ impl Workspace {
                 cached_git_ahead_behind: None,
                 cached_git_space,
                 worktree_space: None,
+                todos: WorkspaceTodoList::default(),
                 metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
                 metadata_token_sequences: HashMap::new(),
                 public_pane_numbers,
@@ -1201,6 +1261,7 @@ impl Workspace {
             cached_git_ahead_behind: None,
             cached_git_space: None,
             worktree_space: None,
+            todos: WorkspaceTodoList::default(),
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
             public_pane_numbers,

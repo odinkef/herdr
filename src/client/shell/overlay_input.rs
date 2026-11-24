@@ -445,7 +445,11 @@ impl ClientShellState {
     }
 
     pub(super) fn insert_overlay_text(&mut self, text: &str) -> bool {
-        if self.insert_worktree_overlay_text(text) {
+        if self.mode == ClientShellMode::TodoEditor && self.overlay.is_none() {
+            self.todo_ui.editor.insert(text);
+            return true;
+        }
+        if self.insert_tab_transfer_text(text) || self.insert_worktree_overlay_text(text) {
             return true;
         }
         match self.overlay.as_mut() {
@@ -625,7 +629,9 @@ impl ClientShellState {
             return;
         }
 
-        if self.route_worktree_overlay_key(key, outcome) {
+        if self.route_tab_transfer_key(key, outcome)
+            || self.route_worktree_overlay_key(key, outcome)
+        {
             return;
         }
         if matches!(self.overlay, Some(ClientShellOverlay::Navigator(_))) {
@@ -936,6 +942,16 @@ impl ClientShellState {
         };
         let trimmed = rename.input.trim();
         let method = match rename.target {
+            ClientRenameTarget::TransferNewWorkspace { source } => {
+                self.submit_tab_transfer(
+                    source,
+                    crate::api::schema::TabTransferDestination::NewWorkspace {
+                        label: (!trimmed.is_empty()).then(|| trimmed.to_owned()),
+                    },
+                    outcome,
+                );
+                return;
+            }
             ClientRenameTarget::NewWorkspace {
                 source_workspace_id,
                 cwd,

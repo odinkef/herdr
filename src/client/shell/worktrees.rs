@@ -527,6 +527,9 @@ impl ClientShellState {
             }
             (
                 PendingEndpointKind::Generic
+                | PendingEndpointKind::WorkspaceTodos
+                | PendingEndpointKind::SetTodoDone { .. }
+                | PendingEndpointKind::TabTransfer { .. }
                 | PendingEndpointKind::AttentionFocus
                 | PendingEndpointKind::ProductAnnouncementDismiss { .. }
                 | PendingEndpointKind::ReleaseNotesDismiss

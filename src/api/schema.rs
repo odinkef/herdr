@@ -85,6 +85,14 @@ pub enum Method {
     WorkspaceFocus(WorkspaceTarget),
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRenameParams),
+    #[serde(rename = "workspace.todos.list")]
+    WorkspaceTodosList(WorkspaceTarget),
+    #[serde(rename = "workspace.todos.add")]
+    WorkspaceTodosAdd(WorkspaceTodoAddParams),
+    #[serde(rename = "workspace.todos.set_done")]
+    WorkspaceTodosSetDone(WorkspaceTodoSetDoneParams),
+    #[serde(rename = "workspace.todos.delete")]
+    WorkspaceTodosDelete(WorkspaceTodoTarget),
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMoveParams),
     #[serde(rename = "workspace.move_block")]
@@ -113,6 +121,8 @@ pub enum Method {
     TabRename(TabRenameParams),
     #[serde(rename = "tab.move")]
     TabMove(TabMoveParams),
+    #[serde(rename = "tab.transfer")]
+    TabTransfer(TabTransferParams),
     #[serde(rename = "tab.close")]
     TabClose(TabTarget),
     #[serde(rename = "agent.list")]

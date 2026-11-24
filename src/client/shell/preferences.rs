@@ -14,8 +14,20 @@ pub(super) struct ClientRemoteCollapsedGroups {
     pub(super) collapsed_groups: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub(super) struct TodoSizePreferences {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) todo_height: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) todo_overlay_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) todo_overlay_height: Option<u16>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(super) struct ClientChromePreferences {
+    #[serde(flatten)]
+    pub(super) todo_size: TodoSizePreferences,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) sidebar_width: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

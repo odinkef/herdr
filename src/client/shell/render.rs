@@ -62,11 +62,13 @@ pub(super) fn render_mode_bar(
             ratatui::style::Color::Reset => palette.surface_dim,
             color => color,
         })
-        .bg(if mode == ClientShellMode::Resize {
-            palette.mauve
-        } else {
-            palette.accent
-        })
+        .bg(
+            if matches!(mode, ClientShellMode::Resize | ClientShellMode::TodoResize) {
+                palette.mauve
+            } else {
+                palette.accent
+            },
+        )
         .add_modifier(Modifier::BOLD);
     let prefix = keybinds.primary_prefix_label();
     let prefix_rhs = |bindings: &crate::config::ActionKeybinds| {
@@ -109,9 +111,28 @@ pub(super) fn render_mode_bar(
                     (" keybinds".to_owned(), base),
                 ]);
             }
-            ClientShellMode::Resize => {
+            ClientShellMode::TodoPrefix => {
                 segments.extend([
-                    (" RESIZE ".to_owned(), mode_style),
+                    (" TODOS ".to_owned(), mode_style),
+                    (" ".to_owned(), base),
+                    ("esc".to_owned(), key),
+                    (" cancel".to_owned(), base),
+                ]);
+                if let Some(binding) = keybinds.keybinds.resize_mode.prefix_rhs_label() {
+                    segments.extend([(format!("  {binding}"), key), (" resize".to_owned(), base)]);
+                }
+            }
+            ClientShellMode::Resize | ClientShellMode::TodoResize => {
+                segments.extend([
+                    (
+                        if mode == ClientShellMode::TodoResize {
+                            " RESIZE TODOS "
+                        } else {
+                            " RESIZE "
+                        }
+                        .to_owned(),
+                        mode_style,
+                    ),
                     ("  ".to_owned(), base),
                     ("h/l".to_owned(), key),
                     (" width  ".to_owned(), base),
@@ -193,6 +214,22 @@ pub(super) fn render_mode_bar(
                     ]);
                 }
             }
+            ClientShellMode::Todos => {
+                segments.extend([
+                    (" TODOS ".to_owned(), mode_style),
+                    (
+                        " ↑/↓ select  space check  n add  del remove  esc back".to_owned(),
+                        base,
+                    ),
+                ]);
+                if let Some(binding) = keybinds.keybinds.resize_mode.label() {
+                    segments.extend([(format!("  {binding}"), key), (" resize".to_owned(), base)]);
+                }
+            }
+            ClientShellMode::TodoEditor => segments.extend([
+                (" NEW TODO ".to_owned(), mode_style),
+                (" enter add  esc cancel".to_owned(), base),
+            ]),
             ClientShellMode::Terminal => unreachable!(),
         }
     }
@@ -243,6 +280,7 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) reveal_focused_tab: &'a mut bool,
     pub(super) sidebar_collapsed: bool,
     pub(super) sidebar_section_split: f32,
+    pub(super) todo_height: u16,
     pub(super) tab_drag_insert_index: Option<usize>,
     pub(super) selected_workspace_id: Option<&'a WorkspaceNavigationTarget>,
     pub(super) reveal_navigation_workspace: &'a mut bool,

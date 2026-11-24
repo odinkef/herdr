@@ -13,7 +13,7 @@ fn restore_mode_bar(
     if frame
         .cursor
         .as_ref()
-        .is_some_and(|cursor| cursor.y == bar.y)
+        .is_some_and(|cursor| super::contains(bar, (cursor.x, cursor.y)))
     {
         frame.cursor = None;
     }
@@ -22,6 +22,7 @@ fn restore_mode_bar(
 impl ClientShellState {
     fn compose_unavailable(&mut self, cols: u16, rows: u16) -> FrameData {
         let layout = self.layout(cols, rows);
+        let todo_sidebar = self.todo_sidebar_area(layout.sidebar);
         let mut buffer = Buffer::empty(Rect::new(0, 0, cols, rows));
         buffer.set_style(
             buffer.area,
@@ -68,6 +69,7 @@ impl ClientShellState {
             reveal_focused_tab: &mut self.reveal_focused_tab,
             sidebar_collapsed: false,
             sidebar_section_split: self.sidebar_section_split,
+            todo_height: todo_sidebar.height,
             tab_drag_insert_index: None,
             selected_workspace_id: self
                 .navigate_workspace_id
@@ -96,6 +98,9 @@ impl ClientShellState {
                 &mut render_state,
                 &mut self.hits,
             );
+        }
+        if !todo_sidebar.is_empty() {
+            self.hits.todos = todos::render(&mut buffer, todo_sidebar, self, false);
         }
         if !self.config.mouse_capture {
             self.hits = ShellHitMap::default();
@@ -135,6 +140,10 @@ impl ClientShellState {
             &self.config.keybinds,
             &self.config.palette,
         );
+        if self.todos_focused() && todo_sidebar.is_empty() {
+            let area = self.todo_overlay_area(buffer.area);
+            self.hits.todos = todos::render(&mut buffer, area, self, true);
+        }
         if let Some(notice) = &self.visible_endpoint_notice {
             self.hits.notification_toast = endpoint_notices::render_notice(
                 &mut buffer,
@@ -144,7 +153,7 @@ impl ClientShellState {
                 &self.config.palette,
             );
         }
-        FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, None, &[])
+        FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, self.hits.todos.cursor.clone(), &[])
     }
 
     pub(crate) fn compose(
@@ -157,6 +166,9 @@ impl ClientShellState {
         if self.last_composed_size != Some((cols, rows)) && self.mode == ClientShellMode::Navigate {
             self.reveal_navigation_workspace = true;
             self.reveal_mobile_workspace = true;
+        }
+        if self.last_composed_size != Some((cols, rows)) && self.todos_focused() {
+            self.reveal_resized_todo(cols, rows);
         }
         self.last_composed_size = Some((cols, rows));
         let valid_navigation_target = self.mode == ClientShellMode::Navigate
@@ -186,6 +198,7 @@ impl ClientShellState {
             return None;
         }
         let layout = self.layout(cols, rows);
+        let todo_sidebar = self.todo_sidebar_area(layout.sidebar);
         if self.last_tab_bar_width != Some(layout.tab_bar.width) {
             self.last_tab_bar_width = Some(layout.tab_bar.width);
             self.reveal_focused_tab = true;
@@ -224,6 +237,7 @@ impl ClientShellState {
                 reveal_focused_tab: &mut self.reveal_focused_tab,
                 sidebar_collapsed: self.sidebar_collapsed,
                 sidebar_section_split: self.sidebar_section_split,
+                todo_height: todo_sidebar.height,
                 tab_drag_insert_index,
                 selected_workspace_id: self
                     .navigate_workspace_id
@@ -235,6 +249,26 @@ impl ClientShellState {
                 workspace_drop_indicator_row,
             },
         );
+        if !todo_sidebar.is_empty() {
+            self.hits.todos = todos::render(&mut buffer, todo_sidebar, self, false);
+        }
+        if let Some(ClientChromeDrag::Tab {
+            transfer_workspace_id: Some(workspace_id),
+            ..
+        }) = &self.chrome_drag
+        {
+            for hit in &self.hits.workspaces {
+                if hit.endpoint_id == self.active_endpoint_id && &hit.workspace_id == workspace_id {
+                    buffer.set_style(
+                        hit.rect,
+                        Style::default()
+                            .fg(self.config.palette.text)
+                            .bg(self.config.palette.active_row_bg)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                }
+            }
+        }
         self.hits.panes = surface
             .panes
             .iter()
@@ -318,7 +352,10 @@ impl ClientShellState {
         let mobile_navigate_panel = !layout.mobile_header.is_empty()
             && self.mode == ClientShellMode::Navigate
             && self.endpoint_error.is_none();
-        let mode_bar = if mobile_navigate_panel || self.overlay.is_some() {
+        let todo_fills_screen = self.todos_focused()
+            && todo_sidebar.is_empty()
+            && self.todo_overlay_area(buffer.area) == buffer.area;
+        let mode_bar = if mobile_navigate_panel || self.overlay.is_some() || todo_fills_screen {
             None
         } else {
             render::render_mode_bar(
@@ -451,6 +488,20 @@ impl ClientShellState {
             }
         }
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
+        if self.todos_focused() {
+            if todo_sidebar.is_empty() && self.overlay.is_none() {
+                let mut composed = frame.to_ratatui_buffer()?;
+                let area = self.todo_overlay_area(composed.area);
+                occlusion.cover(area);
+                self.hits.todos = todos::render(&mut composed, area, self, true);
+                frame.replace_from_ratatui_buffer_preserving_effects(
+                    &composed,
+                    self.hits.todos.cursor.clone(),
+                );
+            } else {
+                frame.cursor = self.hits.todos.cursor.clone();
+            }
+        }
         self.hits.notification_toast = Rect::default();
         let has_config_diagnostic = self.config_diagnostic.is_some();
         let active_lifecycle = self

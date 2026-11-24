@@ -424,6 +424,7 @@ fn restore_workspace(
             cached_git_branch: None,
             cached_git_ahead_behind: None,
             cached_git_space: None,
+            todos: snap.todos.clone(),
             worktree_space: snap.worktree_space.clone(),
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
@@ -1531,6 +1532,7 @@ mod tests {
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
                 next_public_pane_number: 0,
@@ -1606,12 +1608,18 @@ mod tests {
     #[tokio::test]
     async fn restore_preserves_public_id_mapping_after_pane_id_remap() {
         let cwd = std::env::current_dir().unwrap();
+        let mut todos = crate::workspace::WorkspaceTodoList::default();
+        todos.add("keep").unwrap();
+        todos.set_done(1, true).unwrap();
+        todos.add("remove").unwrap();
+        todos.delete(2).unwrap();
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("w1".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
+                todos,
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(10, 1), (20, 3)]),
                 next_public_pane_number: 4,
@@ -1665,7 +1673,7 @@ mod tests {
         };
         let (events, _event_rx) = mpsc::channel(4);
 
-        let (workspaces, _terminals, _runtimes) = restore(
+        let (mut workspaces, _terminals, _runtimes) = restore(
             &snapshot,
             None,
             24,
@@ -1679,13 +1687,17 @@ mod tests {
             Arc::new(RenderSignal::new()),
         );
 
-        let workspace = workspaces.first().expect("workspace should restore");
+        let workspace = workspaces.first_mut().expect("workspace should restore");
         let mut public_numbers: Vec<_> = workspace.public_pane_numbers.values().copied().collect();
         public_numbers.sort_unstable();
         assert_eq!(public_numbers, vec![1, 3]);
         assert_eq!(workspace.next_public_pane_number, 4);
         assert_eq!(workspace.tabs[0].number, 5);
         assert_eq!(workspace.next_public_tab_number, 6);
+        assert_eq!(workspace.todos.items[0].label, "keep");
+        assert!(workspace.todos.items[0].done);
+        workspace.todos.add("after restore").unwrap();
+        assert_eq!(workspace.todos.items[1].id, 3);
     }
 
     #[tokio::test]
@@ -1725,6 +1737,7 @@ mod tests {
                 id: Some("w1".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(10, 1), (11, 2), (12, 3), (13, 4)]),
                 next_public_pane_number: 5,
@@ -1808,6 +1821,7 @@ mod tests {
             id: Some("w1".into()),
             custom_name: None,
             identity_cwd: cwd,
+            todos: Default::default(),
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
             next_public_pane_number: 0,
@@ -1847,6 +1861,7 @@ mod tests {
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
                 next_public_pane_number: 0,
@@ -2203,6 +2218,7 @@ mod tests {
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd,
+                todos: Default::default(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
                 next_public_pane_number: 0,

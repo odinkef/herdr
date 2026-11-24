@@ -17,6 +17,20 @@ A tab is a layout inside a workspace. Use tabs to separate views like `agents`, 
 
 Tabs are addressable from the CLI and socket API.
 
+Move a live tab between spaces (called workspaces in the API) with the tab
+menu's **Move to space…**, `prefix+shift+m`, or a drag onto a sidebar space.
+The complete layout moves atomically within one server, keeping its terminals,
+processes, split ratios, zoom, scrollback, and focused pane. The tab is appended
+to the destination. A new destination starts in the focused terminal's current
+directory without starting a replacement shell. If the source becomes empty,
+only that space is removed; linked worktree spaces and files remain.
+
+Public workspace-qualified tab and pane IDs change during a transfer. Running
+processes keep their original environment strings. Retired pane IDs remain
+aliases, so supported CLI `--current` commands continue to resolve the caller's
+live location. Clients already displaying the tab follow it, while clients
+viewing other tabs keep their locations and independent completion histories.
+
 ## Pane
 
 A pane is a real terminal. Herdr renders the terminal output, sends input back to the process, and preserves the pane across client detach.

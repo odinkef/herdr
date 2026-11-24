@@ -103,6 +103,7 @@ pub(super) struct ShellHitMap {
     pub(super) sidebar_divider: Rect,
     pub(super) sidebar_section_divider: Rect,
     pub(super) sidebar_toggle: Rect,
+    pub(super) todos: todos::TodoHits,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
     pub(super) tab_scroll_left: Rect,
@@ -184,11 +185,13 @@ pub(super) struct ClientTabPress {
     pub(super) workspace_id: String,
     pub(super) start_column: u16,
     pub(super) start_row: u16,
+    pub(super) transfer_source: Option<ClientTabTransferSource>,
 }
 
 pub(super) enum ClientChromeDrag {
     SidebarWidth,
     SidebarSection,
+    Todos(todo_resize::TodoDrag),
     WorkspaceScrollbar {
         grab_row_offset: u16,
     },
@@ -211,6 +214,8 @@ pub(super) enum ClientChromeDrag {
         tab_id: String,
         workspace_id: String,
         insert_index: Option<usize>,
+        transfer_source: Option<ClientTabTransferSource>,
+        transfer_workspace_id: Option<String>,
     },
     Workspace {
         source_workspace_id: String,
@@ -271,6 +276,10 @@ pub(crate) struct ClientShellInput {
 pub(super) enum ClientShellMode {
     Terminal,
     Prefix,
+    Todos,
+    TodoPrefix,
+    TodoResize,
+    TodoEditor,
     Navigate,
     Resize,
     Copy,
@@ -285,6 +294,7 @@ pub(super) enum ClientShellOverlayKind {
     ConfirmClose,
     Help,
     Navigator,
+    TabTransfer,
     WorktreeCreate,
     WorktreeOpen,
     WorktreeRemove,
@@ -295,6 +305,9 @@ pub(super) enum ClientShellOverlayKind {
 
 #[derive(Debug)]
 pub(super) enum ClientRenameTarget {
+    TransferNewWorkspace {
+        source: ClientTabTransferSource,
+    },
     NewWorkspace {
         source_workspace_id: Option<String>,
         cwd: Option<String>,
@@ -517,6 +530,7 @@ pub(super) enum ClientContextMenuAction {
     RemoveWorktree,
     ToggleGroup,
     NewTab,
+    MoveTabToWorkspace,
     RenamePane,
     ClearPaneName,
     SwapWithFocusedPane,
@@ -588,6 +602,7 @@ pub(super) enum ClientShellOverlay {
     ConfirmClose(ClientConfirmCloseOverlay),
     Help(ClientHelpOverlay),
     Navigator(ClientNavigatorOverlay),
+    TabTransfer(ClientTabTransferOverlay),
     WorktreeCreate(ClientWorktreeCreateOverlay),
     WorktreeOpen(ClientWorktreeOpenOverlay),
     WorktreeRemove(ClientWorktreeRemoveOverlay),
@@ -606,6 +621,7 @@ impl ClientShellOverlay {
             Self::ConfirmClose(_) => ClientShellOverlayKind::ConfirmClose,
             Self::Help(_) => ClientShellOverlayKind::Help,
             Self::Navigator(_) => ClientShellOverlayKind::Navigator,
+            Self::TabTransfer(_) => ClientShellOverlayKind::TabTransfer,
             Self::WorktreeCreate(_) => ClientShellOverlayKind::WorktreeCreate,
             Self::WorktreeOpen(_) => ClientShellOverlayKind::WorktreeOpen,
             Self::WorktreeRemove(_) => ClientShellOverlayKind::WorktreeRemove,
@@ -619,7 +635,16 @@ impl ClientShellOverlay {
 #[derive(Debug)]
 pub(super) enum PendingEndpointKind {
     Generic,
+    WorkspaceTodos,
+    SetTodoDone {
+        todo_id: u64,
+        done: bool,
+        sequence: u64,
+    },
     AttentionFocus,
+    TabTransfer {
+        source: ClientTabTransferSource,
+    },
     ProductAnnouncementDismiss {
         version: String,
         id: String,
@@ -858,10 +883,12 @@ pub(super) struct ClientCopyModeState {
 }
 
 pub(crate) struct ClientShellState {
+    pub(super) todo_data: super::todo_data::ClientTodos,
     pub(super) machine_diagnostics: super::machine_diagnostics::MachineDiagnostics,
     pub(super) config: ClientShellConfig,
     pub(super) snapshot: Option<Box<ClientShellSnapshot>>,
     pub(super) active_snapshot_generation: Option<u64>,
+    pub(super) tab_transfer_epoch: u64,
     pub(super) pane_surface_generation: Option<u64>,
     pub(super) pane_surface: Option<PaneSurfaceFrame>,
     /// A future projection surface waits here until its matching snapshot arrives. The visible
@@ -876,6 +903,7 @@ pub(crate) struct ClientShellState {
     pub(super) sidebar_width_manual: bool,
     pub(super) sidebar_section_split: f32,
     pub(super) sidebar_section_split_manual: bool,
+    pub(super) todo_size: preferences::TodoSizePreferences,
     pub(super) agent_panel_sort_manual: bool,
     pub(super) last_sidebar_divider_click: Option<std::time::Instant>,
     pub(super) chrome_drag: Option<ClientChromeDrag>,
@@ -897,6 +925,7 @@ pub(crate) struct ClientShellState {
     pub(super) last_composed_at: Option<std::time::Instant>,
     pub(super) selection_repaint_deadline: Option<std::time::Instant>,
     pub(super) hits: ShellHitMap,
+    pub(super) todo_ui: todos::TodoUi,
     pub(super) endpoints: Vec<ClientShellEndpoint>,
     pub(super) active_endpoint_id: ClientEndpointId,
     pub(super) collapsed_endpoints: HashSet<ClientEndpointId>,
@@ -1034,8 +1063,10 @@ impl ClientShellState {
         Self {
             machine_diagnostics: Default::default(),
             config,
+            todo_data: Default::default(),
             snapshot: None,
             active_snapshot_generation: None,
+            tab_transfer_epoch: 0,
             pane_surface_generation: None,
             pane_surface: None,
             pending_pane_surface: None,
@@ -1051,6 +1082,7 @@ impl ClientShellState {
             sidebar_width_manual: preferences.sidebar_width.is_some(),
             sidebar_section_split,
             sidebar_section_split_manual: preferences.sidebar_section_split.is_some(),
+            todo_size: preferences.todo_size,
             agent_panel_sort_manual: preferences.agent_panel_sort.is_some(),
             last_sidebar_divider_click: None,
             chrome_drag: None,
@@ -1072,6 +1104,7 @@ impl ClientShellState {
             last_composed_at: None,
             selection_repaint_deadline: None,
             hits: ShellHitMap::default(),
+            todo_ui: Default::default(),
             endpoints: vec![local_endpoint()],
             active_endpoint_id: ClientEndpointId::Local,
             collapsed_endpoints: HashSet::new(),
@@ -1240,6 +1273,7 @@ impl ClientShellState {
     }
 
     pub(super) fn reset_endpoint_projection(&mut self) {
+        self.reset_todos();
         self.hits = ShellHitMap::default();
         self.pane_surface = None;
         self.pending_pane_surface = None;
@@ -1332,6 +1366,7 @@ impl ClientShellState {
         if endpoint_boot_changed || generation_changed {
             self.attention = Default::default();
         }
+        self.reconcile_todo_focus(&snapshot);
         self.attention.observe_focus(
             self.snapshot
                 .as_deref()
@@ -1412,13 +1447,16 @@ impl ClientShellState {
                 &snapshot.commands,
             ) {
                 self.set_endpoint_error(err);
-            } else if active_keymap_changed
-                && matches!(
-                    self.mode,
-                    ClientShellMode::Prefix | ClientShellMode::Navigate | ClientShellMode::Resize
-                )
-            {
-                self.mode = ClientShellMode::Terminal;
+            } else if active_keymap_changed {
+                self.mode = match self.mode {
+                    ClientShellMode::Prefix
+                    | ClientShellMode::Navigate
+                    | ClientShellMode::Resize => ClientShellMode::Terminal,
+                    ClientShellMode::TodoPrefix | ClientShellMode::TodoResize => {
+                        ClientShellMode::Todos
+                    }
+                    mode => mode,
+                };
             }
         }
         let tab_layout_changed = self.snapshot.as_deref().is_none_or(|current| {
@@ -1435,13 +1473,15 @@ impl ClientShellState {
                     })
                 || render::tab_bar_status_width(current) != render::tab_bar_status_width(&snapshot)
         });
-        if self
+        let workspace_changed = self
             .snapshot
             .as_deref()
-            .and_then(|current| current.focused_workspace_id.as_deref())
-            != snapshot.focused_workspace_id.as_deref()
-        {
+            .is_none_or(|current| current.focused_workspace_id != snapshot.focused_workspace_id);
+        if workspace_changed {
             self.reveal_focused_workspace = true;
+        }
+        if (workspace_changed || generation_changed) && !boot_changed {
+            self.reset_todos();
         }
         if tab_layout_changed
             || self

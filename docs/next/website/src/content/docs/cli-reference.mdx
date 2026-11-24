@@ -193,10 +193,25 @@ herdr tab create [--workspace <workspace_id>] [--cwd PATH] [--label TEXT] [--env
 herdr tab get <tab_id>
 herdr tab focus <tab_id>
 herdr tab rename <tab_id> <label>
+herdr tab move (<tab_id> | --current) (--workspace <id> | --new-workspace [--label <name>]) [--focus | --no-focus]
 herdr tab close <tab_id>
 ```
 
 A tab is another terminal layout inside a workspace. Without `--workspace`, `tab create` uses the active workspace and fails if none exists. Its JSON response exposes `.result.tab.tab_id` and `.result.root_pane.pane_id`. Closing a workspace's last tab also closes the workspace, matching the TUI close-tab action. If `confirm_close` is enabled and closing the tab would also close a whole worktree group, `tab close` returns a `confirmation_required` error instead.
+
+`tab move` atomically transfers an entire live tab to another workspace on the
+same server, appending it and following its focused pane by default. Use
+`--no-focus` to retain the selected tab where possible. `--current` resolves the
+calling pane's current tab through its pane ID, including aliases after earlier
+moves; inherited `HERDR_TAB_ID` and `HERDR_WORKSPACE_ID` do not select the source.
+It requires a calling pane. `--label` names a new workspace and is only valid
+with `--new-workspace`. An empty source workspace is removed without closing
+other worktree spaces or deleting checkouts. A new destination uses the focused
+terminal's directory and starts no shell. The response supplies the new tab,
+layout, and old-to-new pane ID map. Public tab and pane IDs change; running
+processes retain their original environment strings and retired pane IDs remain
+caller aliases. The JSON API's existing `tab.move` still only reorders tabs;
+this CLI command uses the separately advertised `tab.transfer` method.
 
 With `ui.confirm_close` enabled, the TUI asks for confirmation before closing a workspace's last tab or its only pane from a keybinding or the tab/pane menu. Ordinary pane closes and CLI/API closes remain immediate.
 

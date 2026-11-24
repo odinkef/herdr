@@ -658,8 +658,26 @@ impl AppState {
         {
             self.previous_pane_focus = None;
         }
+        let aliases_before = self.public_pane_id_aliases.len();
+        self.pane_id_aliases.retain(|_, id| !pane_ids.contains(id));
+        self.public_pane_id_aliases
+            .retain(|_, id| !pane_ids.contains(id));
+        self.pending_agent_notifications
+            .retain(|id, _| !pane_ids.contains(id));
+        if let Some(toast) = &mut self.toast {
+            if toast
+                .target
+                .as_ref()
+                .is_some_and(|target| pane_ids.contains(&target.pane_id))
+            {
+                toast.target = None;
+            }
+        }
         for pane_id in pane_ids {
             self.plugin_panes.remove(&pane_id);
+        }
+        if aliases_before != self.public_pane_id_aliases.len() {
+            self.refresh_pane_relocation_aliases();
         }
     }
 

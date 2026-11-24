@@ -632,6 +632,12 @@
           "description": "Cycle blocked agents, then unviewed completions, across the current session. Shares one client-local cycle across all bindings."
         },
         {
+          "key": "keys.focus_todos",
+          "type": "keybinding",
+          "default": "\"prefix+t\"",
+          "description": "Focus the checklist for the active workspace."
+        },
+        {
           "key": "keys.focus_agent",
           "type": "keybinding",
           "default": "unset",
@@ -654,6 +660,12 @@
           "type": "keybinding",
           "default": "\"prefix+shift+t\"",
           "description": "Rename the active tab."
+        },
+        {
+          "key": "keys.move_tab_to_workspace",
+          "type": "keybinding",
+          "default": "\"prefix+shift+m\"",
+          "description": "Open the native picker to move the whole live tab to another space on the same server. Requires tab.transfer support."
         },
         {
           "key": "keys.previous_tab",

@@ -9,7 +9,9 @@ mod panes;
 pub(crate) mod plugins;
 pub(super) mod responses;
 mod session;
+mod tab_transfer;
 mod tabs;
+mod todos;
 mod workspaces;
 mod worktrees;
 
@@ -1070,6 +1072,24 @@ impl App {
             Method::WorkspaceRename(params) => {
                 return self.handle_workspace_rename(request.id, params);
             }
+            Method::WorkspaceTodosList(params) => {
+                return self.handle_workspace_todos(request.id, params.workspace_id, |_| Ok(()));
+            }
+            Method::WorkspaceTodosAdd(params) => {
+                return self.handle_workspace_todos(request.id, params.workspace_id, |todos| {
+                    todos.add(&params.label)
+                });
+            }
+            Method::WorkspaceTodosSetDone(params) => {
+                return self.handle_workspace_todos(request.id, params.workspace_id, |todos| {
+                    todos.set_done(params.todo_id, params.done)
+                });
+            }
+            Method::WorkspaceTodosDelete(params) => {
+                return self.handle_workspace_todos(request.id, params.workspace_id, |todos| {
+                    todos.delete(params.todo_id)
+                });
+            }
             Method::WorkspaceMove(params) => {
                 return self.handle_workspace_move(request.id, params);
             }
@@ -1111,6 +1131,7 @@ impl App {
             Method::TabFocus(target) => return self.handle_tab_focus(request.id, target),
             Method::TabRename(params) => return self.handle_tab_rename(request.id, params),
             Method::TabMove(params) => return self.handle_tab_move(request.id, params),
+            Method::TabTransfer(params) => return self.handle_tab_transfer(request.id, params),
             Method::TabClose(target) => return self.handle_tab_close(request.id, target),
             Method::AgentList(_) => return self.handle_agent_list(request.id),
             Method::AgentGet(target) => return self.handle_agent_get(request.id, target),

@@ -99,9 +99,10 @@ impl ClientShellState {
     pub(crate) fn receive_notification(
         &mut self,
         endpoint_id: &ClientEndpointId,
-        event: SemanticNotification,
+        mut event: SemanticNotification,
         now: std::time::Instant,
     ) -> (Vec<ClientShellNotificationEffect>, bool) {
+        self.normalize_endpoint_notification_target(endpoint_id, &mut event);
         let delay = if event.kind == SemanticNotificationKind::Custom {
             0
         } else {

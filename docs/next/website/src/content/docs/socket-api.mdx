@@ -101,8 +101,9 @@ Raw socket method names use dot notation:
 | Client | `client.window_title.set`, `client.window_title.clear` |
 | Session | `session.snapshot` |
 | Workspace | `workspace.create`, `workspace.list`, `workspace.get`, `workspace.focus`, `workspace.rename`, `workspace.move`, `workspace.move_block`, `workspace.report_metadata`, `workspace.close` |
+| Workspace Todos | `workspace.todos.list`, `workspace.todos.add`, `workspace.todos.set_done`, `workspace.todos.delete` |
 | Worktree | `worktree.list`, `worktree.create`, `worktree.open`, `worktree.remove` |
-| Tab | `tab.create`, `tab.list`, `tab.get`, `tab.focus`, `tab.rename`, `tab.move`, `tab.close` |
+| Tab | `tab.create`, `tab.list`, `tab.get`, `tab.focus`, `tab.rename`, `tab.move`, `tab.transfer`, `tab.close` |
 | Pane | `pane.split`, `pane.swap`, `pane.move`, `pane.zoom`, `pane.layout`, `pane.process_info`, `pane.neighbor`, `pane.edges`, `pane.focus_direction`, `pane.resize`, `pane.list`, `pane.current`, `pane.get`, `pane.rename`, `pane.send_text`, `pane.send_keys`, `pane.send_input`, `pane.read`, `pane.report_agent`, `pane.report_agent_session`, `pane.report_metadata`, `pane.clear_agent_authority`, `pane.release_agent`, `pane.close`, `pane.wait_for_output` |
 | Popup | `popup.close` |
 | Layout | `layout.export`, `layout.apply`, `layout.set_split_ratio` |
@@ -114,6 +115,8 @@ Raw socket method names use dot notation:
 `agent.wait` is server-owned and event-driven. It pins the resolved pane occupant so a replacement cannot satisfy the wait. `agent.prompt` accepts an optional `wait` object with `until` and `timeout_ms`; this submits the prompt and starts the wait in one request, avoiding a race between separate calls. If the resolved agent is already `blocked`, `agent.prompt` returns `agent_blocked` without sending input or starting the wait.
 
 `workspace.move_block` atomically moves the ordered `workspace_ids` before `before_workspace_id`; omit the anchor to move the block to the end. The ids must be unique and the anchor cannot be part of the block. The response contains the authoritative ordered workspace list.
+
+Use a stable `workspace_id` from `workspace.list` with all four methods. Add takes a nonempty single-line `label`. Set completion with `todo_id` and a boolean `done`. Delete takes `todo_id` and succeeds if that task has already been removed. Each result includes `workspace_id`, a per-workspace `revision`, and `todos` in creation order. Each todo has a numeric `id`, `label`, and `done`. IDs are scoped to the workspace and survive restarts. Check which methods the server advertises before calling them.
 
 `session.snapshot` returns a one-time bootstrap snapshot for clients that keep
 their own local runtime cache. The response includes version/protocol metadata,
@@ -269,6 +272,43 @@ running processes. The response is `type: "pane_swap"` with `changed`, optional
 `layout`. Reason values are `no_neighbor`, `same_pane`, `not_found`, and
 `cross_tab`. When a tab is zoomed, swap keeps zoom active and mutates the hidden
 full-tab layout.
+
+`tab.transfer` moves a complete live tab atomically to a workspace on the same
+server. `tab.move` remains the tab reorder operation.
+
+```json
+{"id":"transfer","method":"tab.transfer","params":{"tab_id":"w1:t1","destination":{"type":"workspace","workspace_id":"w2"},"focus":true}}
+{"id":"transfer_new","method":"tab.transfer","params":{"tab_id":"w1:t1","destination":{"type":"new_workspace","label":"review"},"focus":false}}
+```
+
+`focus` defaults to `true`. Validation completes before any mutation. The tab
+is appended to its destination, preserving its complete split tree and ratios,
+zoom, focused pane, label, raw pane/terminal identities, running processes,
+working directories, scrollback, and agent state. Moving to the same workspace
+returns `changed: false`. An empty source workspace is removed without touching
+other worktree spaces or deleting files. New workspaces are ordinary spaces
+using the moved tab's focused terminal directory; no replacement shell starts.
+
+The response includes `changed`, `previous_workspace_id`, `previous_tab_id`,
+the destination `tab` and `layout`, `pane_id_map`, and optional
+`created_workspace` and `removed_workspace`. Fresh public tab and pane numbers
+are allocated in the destination. Retired public pane IDs remain aliases to
+the same terminals, including through live server handoff. Processes keep
+their launch-time environment strings; CLI `tab move --current` resolves the
+caller's present location through its pane alias. Existing workspace/tab
+lifecycle and per-pane movement events are published after commit, followed by
+the destination layout. Transfers do not emit pane termination or tab reorder
+events.
+
+Clients enable transfer only when the endpoint advertises `tab.transfer`.
+The optional JSON control `endpoint.pane-relocations.v1` carries
+`{boot_id, revision, aliases}` with the complete normalized retired-to-current
+pane map on connection and mapping changes. Its revision is a validity barrier:
+clients apply the map before reconciling affected snapshots. Completion
+acknowledgements and sequence watermarks merge by maximum, working sets by
+union. This preserves each client's attention history through rapid moves,
+skipped intermediate snapshots, and same-boot reconnection. Generation-1 binary
+codecs and session-file formats are unchanged.
 
 `pane.move` moves a running pane to a different tab, a new tab, or a new
 workspace:

@@ -83,6 +83,7 @@ mod notifications;
 mod render;
 mod retained_surface;
 mod surface_interest;
+mod tab_transfer;
 
 // Producers can refill even a bounded channel while it is being drained.
 // Yield to scheduled work and rendering between batches; select! below
@@ -2007,6 +2008,21 @@ impl HeadlessServer {
                         return false;
                     }
                 };
+                let relocation_message = match crate::protocol::endpoint::pane_relocations_message(
+                    &crate::protocol::endpoint::EndpointPaneRelocations {
+                        boot_id: seed_snapshot.boot_id.clone(),
+                        revision: seed_snapshot.revision,
+                        aliases: self.app.state.pane_relocation_aliases.clone(),
+                    },
+                ) {
+                    Ok(message) => message,
+                    Err(err) => {
+                        warn!(client_id, err = %err, "failed to encode pane relocations");
+                        return false;
+                    }
+                };
+                connection.shell_pane_relocation_revision =
+                    Some(self.app.state.pane_relocation_revision);
                 connection.shell_location = Some(location);
                 connection.shell_snapshot = Some(seed_snapshot);
                 connection.shell_agent_completions = Some(completion_projection);
@@ -2015,6 +2031,7 @@ impl HeadlessServer {
                 if self.app.state.popup_pane.is_some() && self.popup_owner_tab_id.is_none() {
                     self.popup_owner_tab_id = self.shell_tab_id_for_client(client_id);
                 }
+                self.send_to_client(client_id, relocation_message);
                 if let Some(message) = projection_message {
                     self.send_to_client(client_id, message);
                 }
@@ -3064,6 +3081,7 @@ impl HeadlessServer {
             self.app.state.view.terminal_area =
                 Rect::new(0, 0, self.effective_size.0, self.effective_size.1);
         }
+        let transfers_tab = matches!(&msg.request.method, api::schema::Method::TabTransfer(_));
         let mut response = if matches!(
             &msg.request.method,
             api::schema::Method::ServerReloadConfig(_)
@@ -3090,6 +3108,9 @@ impl HeadlessServer {
             self.app
                 .handle_api_request_after_internal_events_drained(msg.request)
         };
+        if transfers_tab {
+            self.relocate_transferred_tab_owners(&response);
+        }
         if let Some(snapshot) = frozen_alt_screen_read {
             if let Ok(mut success) = serde_json::from_str::<api::schema::SuccessResponse>(&response)
             {

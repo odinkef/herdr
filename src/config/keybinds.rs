@@ -369,6 +369,7 @@ pub struct Keybinds {
     pub previous_agent: ActionKeybinds,
     pub next_agent: ActionKeybinds,
     pub next_attention_agent: ActionKeybinds,
+    pub focus_todos: ActionKeybinds,
     pub focus_agent: Vec<IndexedKeybind>,
     pub new_tab: ActionKeybinds,
     pub rename_tab: ActionKeybinds,
@@ -376,6 +377,7 @@ pub struct Keybinds {
     pub next_tab: ActionKeybinds,
     pub move_tab_previous: ActionKeybinds,
     pub move_tab_next: ActionKeybinds,
+    pub move_tab_to_workspace: ActionKeybinds,
     pub switch_tab: Vec<IndexedKeybind>,
     pub switch_workspace: Vec<IndexedKeybind>,
     pub close_tab: ActionKeybinds,
@@ -553,6 +555,7 @@ impl Config {
             previous_agent: empty_action!(),
             next_agent: empty_action!(),
             next_attention_agent: empty_action!(),
+            focus_todos: empty_action!(),
             focus_agent: Vec::new(),
             new_tab: empty_action!(),
             rename_tab: empty_action!(),
@@ -560,6 +563,7 @@ impl Config {
             next_tab: empty_action!(),
             move_tab_previous: empty_action!(),
             move_tab_next: empty_action!(),
+            move_tab_to_workspace: empty_action!(),
             switch_tab: Vec::new(),
             switch_workspace: Vec::new(),
             close_tab: empty_action!(),
@@ -687,6 +691,7 @@ impl Config {
             apply_action!(keybinds.previous_agent, previous_agent, source);
             apply_action!(keybinds.next_agent, next_agent, source);
             apply_action!(keybinds.next_attention_agent, next_attention_agent, source);
+            apply_action!(keybinds.focus_todos, focus_todos, source);
             apply_indexed!(
                 keybinds.focus_agent,
                 focus_agent,
@@ -699,6 +704,11 @@ impl Config {
             apply_action!(keybinds.next_tab, next_tab, source);
             apply_action!(keybinds.move_tab_previous, move_tab_previous, source);
             apply_action!(keybinds.move_tab_next, move_tab_next, source);
+            apply_action!(
+                keybinds.move_tab_to_workspace,
+                move_tab_to_workspace,
+                source
+            );
             apply_indexed!(
                 keybinds.switch_tab,
                 switch_tab,
@@ -1863,6 +1873,51 @@ close_tab = "X"
             format_key_combo((KeyCode::BackTab, KeyModifiers::CONTROL | KeyModifiers::ALT)),
             "ctrl+alt+shift+tab"
         );
+    }
+
+    #[test]
+    fn tab_transfer_binding_survives_profile_reload_and_reports_conflicts() {
+        let config = Config::default();
+        let bindings = config.keybinds();
+        assert!(bindings
+            .move_tab_to_workspace
+            .matches_prefix_key(&TerminalKey::new(KeyCode::Char('M'), KeyModifiers::empty())));
+        let profile = config.local_keybindings_profile_toml().unwrap();
+        let restored = crate::config::keybindings_from_profile_toml(&profile).unwrap();
+        assert_eq!(
+            restored.keybinds.move_tab_to_workspace.labels(),
+            bindings.move_tab_to_workspace.labels()
+        );
+        for value in [
+            r#""ctrl+alt+m""#,
+            r#"["ctrl+alt+m", "prefix+shift+m"]"#,
+            r#""""#,
+        ] {
+            let config: Config =
+                toml::from_str(&format!("[keys]\nmove_tab_to_workspace = {value}")).unwrap();
+            assert!(config.collect_diagnostics().is_empty());
+        }
+        // User bindings intentionally displace defaults without a diagnostic.
+        let override_config: Config =
+            toml::from_str("[keys]\nmove_tab_to_workspace = \"prefix+n\"\n").unwrap();
+        assert!(override_config.collect_diagnostics().is_empty());
+        assert!(override_config.keybinds().next_tab.bindings.is_empty());
+        assert_eq!(
+            override_config
+                .keybinds()
+                .move_tab_to_workspace
+                .bindings
+                .len(),
+            1
+        );
+        // Two explicit user assignments must still report the conflict.
+        let config: Config = toml::from_str(
+            "[keys]\nmove_tab_to_workspace = \"prefix+n\"\nnext_tab = \"prefix+n\"\n",
+        )
+        .unwrap();
+        assert!(config.collect_diagnostics().iter().any(|message| message
+            .contains("move_tab_to_workspace")
+            && message.contains("next_tab")));
     }
 
     #[test]

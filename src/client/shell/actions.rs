@@ -1,5 +1,19 @@
 use super::*;
 
+pub(super) fn resize_direction(
+    action: crate::input::KeybindAction,
+) -> Option<crate::api::schema::PaneDirection> {
+    use crate::api::schema::PaneDirection;
+    use crate::input::KeybindAction;
+    match action {
+        KeybindAction::ResizePaneLeft => Some(PaneDirection::Left),
+        KeybindAction::ResizePaneRight => Some(PaneDirection::Right),
+        KeybindAction::ResizePaneUp => Some(PaneDirection::Up),
+        KeybindAction::ResizePaneDown => Some(PaneDirection::Down),
+        _ => None,
+    }
+}
+
 impl ClientShellState {
     pub(super) fn record_binding(
         &mut self,
@@ -20,6 +34,10 @@ impl ClientShellState {
                 self.persist_chrome_preferences(outcome);
             }
             crate::input::KeybindMatch::Action(action) => {
+                if action == crate::input::KeybindAction::FocusTodos {
+                    self.focus_todos(outcome);
+                    return;
+                }
                 if action == crate::input::KeybindAction::NextAttentionAgent {
                     self.focus_next_attention(outcome);
                     return;
@@ -82,6 +100,16 @@ impl ClientShellState {
                     self.invalidate_pane_surface();
                     outcome.repaint = true;
                     outcome.resize = true;
+                    return;
+                }
+                if action == crate::input::KeybindAction::MoveTabToWorkspace {
+                    if let Some(tab_id) = self
+                        .snapshot
+                        .as_deref()
+                        .and_then(|s| s.focused_tab_id.clone())
+                    {
+                        self.open_tab_transfer_picker(tab_id, outcome);
+                    }
                     return;
                 }
                 if action == crate::input::KeybindAction::NewWorkspace {
@@ -369,10 +397,12 @@ impl ClientShellState {
             | crate::api::schema::Method::PaneFocusDirection(_) => true,
             crate::api::schema::Method::WorkspaceCreate(params) => params.focus,
             crate::api::schema::Method::TabCreate(params) => params.focus,
+            crate::api::schema::Method::TabTransfer(params) => params.focus,
             crate::api::schema::Method::PaneSplit(params) => params.focus,
             _ => false,
         };
         if changes_focus {
+            self.cancel_pending_todo_focus(None);
             if !matches!(kind, PendingEndpointKind::AttentionFocus) {
                 self.attention = Default::default();
             }
@@ -385,14 +415,7 @@ impl ClientShellState {
         }
         let method_name = crate::api::api_method_name(&method).to_owned();
         if !self.supports_endpoint_method(&method) {
-            outcome.repaint |= self.push_endpoint_notice(
-                ClientEndpointNoticeKind::Unsupported,
-                method_name.clone(),
-                "Action unavailable",
-                format!(
-                    "This server does not support {method_name} yet. Update and restart it to enable this action."
-                ),
-            );
+            outcome.repaint |= self.unsupported_endpoint_action(&method_name);
             return false;
         }
         let Some(snapshot) = self.snapshot.as_deref() else {
@@ -440,6 +463,17 @@ impl ClientShellState {
             "paste_rejected",
             "Paste rejected",
             message,
+        )
+    }
+
+    pub(super) fn unsupported_endpoint_action(&mut self, method_name: &str) -> bool {
+        self.push_endpoint_notice(
+            ClientEndpointNoticeKind::Unsupported,
+            method_name,
+            "Action unavailable",
+            format!(
+                "This server does not support {method_name} yet. Update and restart it to enable this action."
+            ),
         )
     }
 
@@ -520,6 +554,9 @@ impl ClientShellState {
         {
             return (false, Vec::new());
         }
+        if let PendingEndpointKind::TabTransfer { source } = &pending.kind {
+            return self.complete_tab_transfer(source, result);
+        }
         if let PendingEndpointKind::PaneLinkResolve { target } = pending.kind {
             return self.complete_link_hover(target, result);
         }
@@ -532,6 +569,7 @@ impl ClientShellState {
             self.endpoint_notice_seen.remove(&timeout_key);
         }
         if let Err(error) = &result {
+            self.cancel_pending_todo_focus(Some(request_id));
             if self
                 .pending_workspace_highlight
                 .as_ref()
@@ -574,6 +612,10 @@ impl ClientShellState {
             }
         }
         match pending.kind {
+            PendingEndpointKind::WorkspaceTodos | PendingEndpointKind::SetTodoDone { .. } => {
+                return (self.complete_todos(result), Vec::new());
+            }
+            PendingEndpointKind::TabTransfer { .. } => unreachable!("handled above"),
             PendingEndpointKind::Generic => {}
             PendingEndpointKind::AttentionFocus => {
                 if result.is_err() {
@@ -886,19 +928,13 @@ impl ClientShellState {
         let focused_tab = snapshot.focused_tab_id.clone();
         let focused_pane = snapshot.focused_pane_id.clone();
         let direction = |action| match action {
-            KeybindAction::FocusPaneLeft
-            | KeybindAction::SwapPaneLeft
-            | KeybindAction::ResizePaneLeft => Some(PaneDirection::Left),
-            KeybindAction::FocusPaneDown
-            | KeybindAction::SwapPaneDown
-            | KeybindAction::ResizePaneDown => Some(PaneDirection::Down),
-            KeybindAction::FocusPaneUp
-            | KeybindAction::SwapPaneUp
-            | KeybindAction::ResizePaneUp => Some(PaneDirection::Up),
-            KeybindAction::FocusPaneRight
-            | KeybindAction::SwapPaneRight
-            | KeybindAction::ResizePaneRight => Some(PaneDirection::Right),
-            _ => None,
+            KeybindAction::FocusPaneLeft | KeybindAction::SwapPaneLeft => Some(PaneDirection::Left),
+            KeybindAction::FocusPaneDown | KeybindAction::SwapPaneDown => Some(PaneDirection::Down),
+            KeybindAction::FocusPaneUp | KeybindAction::SwapPaneUp => Some(PaneDirection::Up),
+            KeybindAction::FocusPaneRight | KeybindAction::SwapPaneRight => {
+                Some(PaneDirection::Right)
+            }
+            _ => resize_direction(action),
         };
 
         match action {

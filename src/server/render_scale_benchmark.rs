@@ -318,6 +318,18 @@ fn print_snapshot_encoding_profiles(label: &str, build: fn(usize) -> Vec<Workspa
     }
 }
 
+fn print_todo_profiles(label: &str, build: fn(usize) -> Vec<Workspace>) {
+    let rows = [1, 15].map(|count| {
+        let mut pipeline = RenderPipeline::new(build(count));
+        pipeline
+            .client
+            .populate_todos_for_profile(&pipeline.app.public_workspace_id(0));
+        (count, profile_pipeline(pipeline))
+    });
+    println!("workspace todos: {label}, 20 items");
+    print_stage("client shell composition", &rows, |stats| stats.client);
+}
+
 fn print_token_rule_profiles() {
     let rules = std::iter::repeat_n(
         "{ contains = 'NO-MATCH', ignore_case = true, bold = true }",
@@ -610,6 +622,8 @@ async fn render_scale_profile() {
     print_snapshot_encoding_profiles("background workspaces", workspaces);
     print_profiles("active panes (one workspace)", active_panes);
     print_snapshot_encoding_profiles("active panes", active_panes);
+    print_todo_profiles("background workspaces", workspaces);
+    print_todo_profiles("active panes", active_panes);
     print_token_rule_profiles();
     print_surface_reuse_profiles();
     print_surface_damage_profiles();

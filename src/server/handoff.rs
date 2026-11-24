@@ -47,6 +47,9 @@ pub(crate) struct HandoffManifest {
     /// Absent from manifests written before this field existed.
     #[serde(default)]
     pub api_window_title: Option<String>,
+    /// Normalized retired public pane IDs survive server replacement.
+    #[serde(default)]
+    pub public_pane_aliases: std::collections::BTreeMap<String, String>,
     /// A host restart or shutdown announced to the old server but not yet
     /// committed. Absent from manifests written before this field existed.
     #[serde(default)]
@@ -322,6 +325,7 @@ pub(crate) fn manifest_for(
         snapshot,
         panes,
         api_window_title,
+        public_pane_aliases: std::collections::BTreeMap::new(),
         host_shutdown_intent,
     }
 }
@@ -647,5 +651,19 @@ mod tests {
             serde_json::from_value(value).expect("an older manifest should still load");
 
         assert!(older.api_window_title.is_none());
+    }
+
+    #[test]
+    fn public_pane_aliases_are_additive_defaulted_and_round_trip() {
+        let mut manifest = manifest_for(empty_snapshot(), Vec::new(), None, None, None, None);
+        manifest
+            .public_pane_aliases
+            .insert("w9:p1".into(), "w2:p7".into());
+        let mut value = serde_json::to_value(&manifest).unwrap();
+        let decoded: HandoffManifest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(decoded.public_pane_aliases, manifest.public_pane_aliases);
+        value.as_object_mut().unwrap().remove("public_pane_aliases");
+        let older: HandoffManifest = serde_json::from_value(value).unwrap();
+        assert!(older.public_pane_aliases.is_empty());
     }
 }
